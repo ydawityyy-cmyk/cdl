@@ -212,7 +212,7 @@ async function renderStoreManager(container, user, role) {
           <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
         </div>
       </div>
-      <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
           style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
@@ -319,7 +319,7 @@ async function renderTransferOfficer(container, user, role) {
           <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
         </div>
       </div>
-      <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
           style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
@@ -380,7 +380,7 @@ async function renderProcurementOfficer(container, user, role) {
           <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
         </div>
       </div>
-      <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
           style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
@@ -437,7 +437,7 @@ async function renderDataHolder(container, user, role) {
           <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
         </div>
       </div>
-      <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
           style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
@@ -504,7 +504,7 @@ async function renderSiteOverseer(container, user, role) {
           <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
         </div>
       </div>
-      <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
           style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
@@ -584,7 +584,7 @@ async function renderAdminDash(container, user, role) {
           <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
         </div>
       </div>
-      <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask about system status, users, stock…"
           style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
@@ -733,7 +733,7 @@ async function renderGeneric(container, user, role) {
           <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
         </div>
       </div>
-      <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
           style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />

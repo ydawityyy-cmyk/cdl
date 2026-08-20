@@ -120,16 +120,47 @@ async function sendMessage() {
 
 function formatMarkdown(text) {
   if (!text) return "";
-  let html = text
+  
+  // 1. Extract code blocks to avoid messing with code internals
+  const codeBlocks = [];
+  let processed = text.replace(/```([\s\S]*?)```/g, (match, code) => {
+    codeBlocks.push(code.trim());
+    return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
+  });
+
+  // 2. Escape HTML
+  processed = processed
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/^### (.*$)/gim, '<h4 style="color:var(--text-100);font-size:14px;font-weight:700;margin:8px 0 4px 0;">$1</h4>')
-    .replace(/^## (.*$)/gim, '<h3 style="color:var(--text-100);font-size:15px;font-weight:700;margin:10px 0 6px 0;">$1</h3>')
+    .replace(/>/g, "&gt;");
+
+  // 3. Headers
+  processed = processed
+    .replace(/^### (.*$)/gim, '<h4 style="color:var(--text-100);font-size:13px;font-weight:700;margin:8px 0 4px 0;">$1</h4>')
+    .replace(/^## (.*$)/gim, '<h3 style="color:var(--text-100);font-size:14px;font-weight:700;margin:10px 0 6px 0;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:3px;">$1</h3>')
+    .replace(/^# (.*$)/gim, '<h2 style="color:var(--gold);font-size:15px;font-weight:800;margin:12px 0 8px 0;">$1</h2>');
+
+  // 4. Bold & Italics & Inline Code
+  processed = processed
     .replace(/\*\*(.*?)\*\*/gim, '<strong style="color:var(--text-100);font-weight:600;">$1</strong>')
-    .replace(/^• (.*$)/gim, '<div style="display:flex;gap:6px;margin:3px 0;"><span style="color:var(--gold);">•</span><span>$1</span></div>')
-    .replace(/\n/g, '<br>');
-  return html;
+    .replace(/\*(.*?)\*/gim, '<em style="color:var(--text-200);">$1</em>')
+    .replace(/`([^`]+)`/gim, '<code style="background:rgba(212,175,110,0.12);color:var(--gold);padding:2px 6px;border-radius:4px;font-family:monospace;font-size:12px;">$1</code>');
+
+  // 5. Bullet lists (*, -, •)
+  processed = processed.replace(/^[\*\-•] (.*$)/gim, '<div style="display:flex;gap:8px;margin:3px 0 3px 4px;"><span style="color:var(--gold);font-weight:bold;">•</span><span style="flex:1;">$1</span></div>');
+
+  // 6. Numbered lists (1., 2., etc.)
+  processed = processed.replace(/^(\d+)\. (.*$)/gim, '<div style="display:flex;gap:8px;margin:4px 0 4px 4px;"><span style="color:var(--gold);font-weight:700;min-width:16px;">$1.</span><span style="flex:1;">$2</span></div>');
+
+  // 7. Line breaks
+  processed = processed.replace(/\n/g, '<br>');
+
+  // 8. Restore code blocks
+  processed = processed.replace(/__CODE_BLOCK_(\d+)__/g, (match, idx) => {
+    return `<pre style="background:var(--bg-900);border:1px solid var(--border);border-radius:8px;padding:10px 12px;overflow-x:auto;margin:8px 0;font-family:monospace;font-size:12px;color:var(--gold);line-height:1.5;"><code>${codeBlocks[idx]}</code></pre>`;
+  });
+
+  return processed;
 }
 
 function appendMsg(role, text, temp = false) {
@@ -153,7 +184,7 @@ function appendMsg(role, text, temp = false) {
   }
   
   container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
+  setTimeout(() => { container.scrollTop = container.scrollHeight; }, 10);
   return div;
 }
 

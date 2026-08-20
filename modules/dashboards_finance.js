@@ -131,7 +131,7 @@ export async function renderFinanceDashboard(container, user) {
           <span style="color:var(--text-300);font-size:11px;">7 msgs/day</span>
         </div>
       </div>
-      <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask about finance, budget, spend…"
           style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
