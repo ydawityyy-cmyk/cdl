@@ -632,116 +632,100 @@ async function renderGeneric(container, user, role) {
       </div>
     </div>`;
     initAIChat(user);
+
+    // ── ADMIN SETTINGS PANEL ─────────────────────────────────────────────────
+    if (user.role === 'admin') {
+      (async () => {
+        const settingsCard = document.createElement('div');
+        settingsCard.className = 'card';
+        settingsCard.style.cssText = 'margin-top:20px;';
+        settingsCard.innerHTML = [
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">',
+          '  <span style="font-size:16px;">⚙️</span>',
+          '  <h3 style="font-size:14px;font-weight:700;color:var(--text-100);margin:0;">System Settings</h3>',
+          '  <span style="background:rgba(61,142,248,0.12);color:#3d8ef8;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600;">ADMIN ONLY</span>',
+          '</div>',
+          '<div style="display:flex;flex-direction:column;gap:14px;">',
+          '  <div>',
+          '    <label style="font-size:12px;font-weight:600;color:var(--text-200);display:block;margin-bottom:6px;">',
+          '      🤖 Gemini API Key',
+          '      <span style="font-weight:400;color:var(--text-400);margin-left:6px;">Powers the AI Advisor with real intelligence</span>',
+          '    </label>',
+          '    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">',
+          '      <input id="gemini-key-input" type="password" placeholder="AIzaSy… paste Gemini key here"',
+          '        style="flex:1;min-width:200px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-100);font-size:13px;" />',
+          '      <button id="gemini-key-save" style="background:var(--gold);color:#0a0c10;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;">💾 Save Key</button>',
+          '      <button id="gemini-key-test" style="background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--text-200);cursor:pointer;">🧪 Test AI</button>',
+          '    </div>',
+          '    <div id="gemini-key-status" style="margin-top:8px;font-size:12px;color:var(--text-400);">Checking key status…</div>',
+          '  </div>',
+          '  <div style="background:rgba(212,175,110,0.06);border:1px solid rgba(212,175,110,0.2);border-radius:8px;padding:12px;">',
+          '    <div style="font-size:12px;color:var(--text-300);line-height:1.7;">',
+          '      💡 <strong>Free Gemini key:</strong> Go to <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--gold);">aistudio.google.com/apikey</a> → Sign in → Create API Key → paste above. Free: 1,500 req/day.',
+          '    </div>',
+          '  </div>',
+          '</div>'
+        ].join('');
+
+        const mainEl = container.querySelector('#dash-main') || container;
+        mainEl.appendChild(settingsCard);
+
+        // Load current key status
+        try {
+          const { data } = await supabase.from('app_settings').select('value').eq('key', 'gemini_api_key').limit(1);
+          const statusEl = document.getElementById('gemini-key-status');
+          const inputEl = document.getElementById('gemini-key-input');
+          const val = data?.[0]?.value?.trim();
+          if (statusEl) {
+            if (val) {
+              statusEl.innerHTML = '<span style="color:#2ecc71;">✅ <strong>Gemini key active</strong> — AI using Gemini intelligence (key: …' + val.slice(-6) + ')</span>';
+              if (inputEl) inputEl.placeholder = 'Key saved: …' + val.slice(-6) + ' (paste new to replace)';
+            } else {
+              statusEl.innerHTML = '<span style="color:var(--gold);">⚠️ No key set — AI uses built-in engine. Add key for full intelligence.</span>';
+            }
+          }
+        } catch(e) {
+          const s = document.getElementById('gemini-key-status');
+          if (s) s.textContent = 'Error loading settings: ' + e.message;
+        }
+
+        document.getElementById('gemini-key-save')?.addEventListener('click', async () => {
+          const input = document.getElementById('gemini-key-input');
+          const status = document.getElementById('gemini-key-status');
+          const btn = document.getElementById('gemini-key-save');
+          const val = input?.value?.trim();
+          if (!val) { if (status) { status.innerHTML = '<span style="color:#e74c3c;">❌ Paste your API key first</span>'; } return; }
+          if (!val.startsWith('AIzaSy')) { if (status) { status.innerHTML = '<span style="color:#e74c3c;">❌ Gemini keys start with AIzaSy — check your key</span>'; } return; }
+          if (btn) btn.textContent = '⏳ Saving…';
+          try {
+            const { error } = await supabase.from('app_settings').upsert({ key: 'gemini_api_key', value: val, description: 'Gemini API key', updated_at: new Date().toISOString() });
+            if (error) throw error;
+            if (status) status.innerHTML = '<span style="color:#2ecc71;">✅ <strong>Key saved!</strong> AI Advisor now uses Gemini (…' + val.slice(-6) + ')</span>';
+            if (input) { input.value = ''; input.placeholder = 'Key saved: …' + val.slice(-6) + ' (paste new to replace)'; }
+          } catch(e2) {
+            if (status) status.innerHTML = '<span style="color:#e74c3c;">❌ ' + e2.message + '</span>';
+          }
+          if (btn) btn.textContent = '💾 Save Key';
+        });
+
+        document.getElementById('gemini-key-test')?.addEventListener('click', async () => {
+          const status = document.getElementById('gemini-key-status');
+          if (status) status.innerHTML = '<span style="color:var(--text-400);">🧪 Testing AI…</span>';
+          try {
+            const token = (await supabase.auth.getSession())?.data?.session?.access_token || '';
+            const res = await fetch('/.netlify/functions/ai-chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+              body: JSON.stringify({ prompt: 'hello, confirm you are working and which engine is active' })
+            });
+            const d = await res.json();
+            const powered = (d.powered || '').includes('gemini') ? '🤖 Gemini AI' : '⚙️ Built-in Engine';
+            if (status) status.innerHTML = '<span style="color:' + ((d.powered||'').includes('gemini') ? '#2ecc71' : 'var(--gold)') + '">' + powered + ' is active: <em>"' + (d.reply||'').slice(0,80) + '…"</em></span>';
+          } catch(e3) {
+            if (status) status.innerHTML = '<span style="color:#e74c3c;">❌ Test failed: ' + e3.message + '</span>';
+          }
+        });
+      })();
+    }
   }
 }
-
-// Admin Settings Panel injected
-
-  // ── ADMIN SETTINGS PANEL ─────────────────────────────────────────────────────
-  if (role.name === 'admin' || user.role === 'admin') {
-    const settingsDiv = document.createElement('div');
-    settingsDiv.className = 'card';
-    settingsDiv.style.cssText = 'margin-top:20px;';
-    settingsDiv.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-        <span style="font-size:16px;">⚙️</span>
-        <h3 style="font-size:14px;font-weight:700;color:var(--text-100);margin:0;">System Settings</h3>
-        <span style="background:rgba(61,142,248,0.12);color:#3d8ef8;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600;">ADMIN ONLY</span>
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:14px;">
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--text-200);display:block;margin-bottom:6px;">
-            🤖 Gemini API Key
-            <span style="font-weight:400;color:var(--text-400);margin-left:6px;">Powers the AI Advisor with real intelligence</span>
-          </label>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <input id="gemini-key-input" type="password"
-              placeholder="AIzaSy... (paste your Gemini API key here)"
-              style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text-100);font-size:13px;font-family:monospace;"
-              autocomplete="off" />
-            <button id="gemini-key-save" onclick="window._saveGeminiKey()"
-              style="background:var(--gold);color:#0a0c10;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">
-              💾 Save Key
-            </button>
-            <button onclick="window._testGeminiKey()"
-              style="background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--text-200);cursor:pointer;white-space:nowrap;">
-              🧪 Test
-            </button>
-          </div>
-          <div id="gemini-key-status" style="margin-top:8px;font-size:12px;color:var(--text-400);">Loading current status…</div>
-        </div>
-
-        <div style="background:rgba(212,175,110,0.06);border:1px solid rgba(212,175,110,0.2);border-radius:8px;padding:12px;">
-          <div style="font-size:12px;color:var(--text-300);line-height:1.7;">
-            💡 <strong>How to get a free Gemini API key:</strong>
-            Visit <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--gold);">aistudio.google.com/apikey</a>
-            → Sign in → Create API Key → Copy & paste above.
-            Free tier: 1,500 requests/day, 1M tokens/min.
-          </div>
-        </div>
-      </div>
-    `;
-
-    const adminMain = container.querySelector('#dash-main') || container;
-    adminMain.appendChild(settingsDiv);
-
-    // Load current key status
-    (async () => {
-      try {
-        const { data } = await supabase.from('app_settings').select('value').eq('key', 'gemini_api_key').limit(1);
-        const statusEl = document.getElementById('gemini-key-status');
-        const inputEl = document.getElementById('gemini-key-input');
-        if (!statusEl) return;
-        const val = data?.[0]?.value?.trim();
-        if (val) {
-          statusEl.innerHTML = `✅ <strong>Gemini key active</strong> — AI is using real intelligence (key ending: …${val.slice(-6)})`;
-          statusEl.style.color = 'var(--accent-green)';
-          if (inputEl) inputEl.placeholder = `Current key: …${val.slice(-6)} (type to replace)`;
-        } else {
-          statusEl.innerHTML = '⚠️ No Gemini key set — AI is using built-in reasoning engine. Add a key to enable full intelligence.';
-          statusEl.style.color = 'var(--gold)';
-        }
-      } catch {}
-    })();
-
-    window._saveGeminiKey = async function() {
-      const input = document.getElementById('gemini-key-input');
-      const status = document.getElementById('gemini-key-status');
-      const btn = document.getElementById('gemini-key-save');
-      const val = input?.value?.trim();
-      if (!val) { if (status) { status.textContent = '❌ Please paste a valid API key first'; status.style.color = '#e74c3c'; } return; }
-      if (!val.startsWith('AIzaSy')) { if (status) { status.textContent = '❌ Gemini keys start with AIzaSy — check your key'; status.style.color = '#e74c3c'; } return; }
-
-      if (btn) btn.textContent = '⏳ Saving…';
-      try {
-        const { error } = await supabase.from('app_settings').upsert({ key: 'gemini_api_key', value: val, description: 'Google Gemini API key', updated_at: new Date().toISOString() });
-        if (error) throw error;
-        if (status) { status.innerHTML = `✅ <strong>Key saved!</strong> AI will now use Gemini for all responses (key ending: …${val.slice(-6)})`; status.style.color = 'var(--accent-green)'; }
-        if (input) { input.value = ''; input.placeholder = `Current key: …${val.slice(-6)} (type to replace)`; }
-      } catch (e) {
-        if (status) { status.textContent = `❌ Save failed: ${e.message}`; status.style.color = '#e74c3c'; }
-      }
-      if (btn) btn.textContent = '💾 Save Key';
-    };
-
-    window._testGeminiKey = async function() {
-      const status = document.getElementById('gemini-key-status');
-      if (status) { status.textContent = '🧪 Testing AI connection…'; status.style.color = 'var(--text-400)'; }
-      try {
-        const res = await fetch('/.netlify/functions/ai-chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: 'hello, briefly confirm you are working' })
-        });
-        const d = await res.json();
-        if (status) {
-          const powered = d.powered === 'gemini-2.0-flash-lite' ? '🤖 Gemini AI' : '⚙️ Rule Engine';
-          status.innerHTML = `${powered} is responding: <em>"${d.reply?.slice(0,80)}…"</em>`;
-          status.style.color = d.powered?.includes('gemini') ? 'var(--accent-green)' : 'var(--gold)';
-        }
-      } catch (e) {
-        if (status) { status.textContent = `❌ Test failed: ${e.message}`; status.style.color = '#e74c3c'; }
-      }
-    };
-  }
