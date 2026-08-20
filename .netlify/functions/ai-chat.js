@@ -110,7 +110,7 @@ async function callGemini(apiKey, systemPrompt, userPrompt, history = []) {
   const body = JSON.stringify({
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents,
-    generationConfig: { temperature: 0.7, maxOutputTokens: 800, topP: 0.95 },
+    generationConfig: { temperature: 0.7, maxOutputTokens: 3000, topP: 0.95 },
   });
 
   const models = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite'];
