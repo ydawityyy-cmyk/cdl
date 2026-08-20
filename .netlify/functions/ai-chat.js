@@ -1,22 +1,17 @@
-// Netlify Function — CDL Super-Intelligent AI Advisor with Live Context & Deep Semantic Reasoning
-// POST /.netlify/functions/ai-chat { prompt, systemPrompt, history }
+// Netlify Function — CDL AI Advisor with Gemini Intelligence + Live DB Context
+// POST /.netlify/functions/ai-chat { prompt, history }
 
 const https = require('https');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://dljvplrbjogncwrpmfsj.supabase.co';
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE || '';
-const GEMINI_KEYS = (process.env.GEMINI_KEYS || process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean);
-const GROQ_KEY = process.env.GROQ_API_KEY || '';
-const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
 
 function httpsRequest(url, options, body) {
   return new Promise((resolve, reject) => {
     const req = https.request(url, options, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        resolve({ status: res.statusCode, headers: res.headers, body: data });
-      });
+      res.on('end', () => { resolve({ status: res.statusCode, headers: res.headers, body: data }); });
     });
     req.on('error', reject);
     if (body) req.write(body);
@@ -26,21 +21,113 @@ function httpsRequest(url, options, body) {
 
 async function supabaseQuery(tablePath) {
   const url = `${SUPABASE_URL}/rest/v1/${tablePath}`;
-  const opts = {
+  const result = await httpsRequest(url, {
     method: 'GET',
-    headers: {
-      apikey: SERVICE_ROLE,
-      Authorization: `Bearer ${SERVICE_ROLE}`,
-      'Content-Type': 'application/json'
-    },
-  };
-  const result = await httpsRequest(url, opts);
+    headers: { apikey: SERVICE_ROLE, Authorization: `Bearer ${SERVICE_ROLE}`, 'Content-Type': 'application/json' }
+  });
   if (result.status >= 400) return [];
+  try { return JSON.parse(result.body); } catch { return []; }
+}
+
+// Read Gemini key from DB (admin updates via dashboard)
+async function getGeminiKey() {
   try {
-    return JSON.parse(result.body);
-  } catch (e) {
-    return [];
+    const rows = await supabaseQuery('app_settings?key=eq.gemini_api_key&select=value&limit=1');
+    const dbKey = rows?.[0]?.value?.trim();
+    if (dbKey) return dbKey;
+  } catch (_) {}
+  return process.env.GEMINI_API_KEY || '';
+}
+
+// Call Gemini 2.0 Flash Lite with full live context injected
+async function callGemini(apiKey, systemPrompt, userPrompt, history = []) {
+  const contents = [
+    ...history.slice(-6).map(m => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.content }]
+    })),
+    { role: 'user', parts: [{ text: userPrompt }] }
+  ];
+
+  const body = JSON.stringify({
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents,
+    generationConfig: { temperature: 0.65, maxOutputTokens: 600, topP: 0.9 },
+    safetySettings: [
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+    ]
+  });
+
+  const result = await httpsRequest(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+    body
+  );
+
+  if (result.status !== 200) {
+    const err = JSON.parse(result.body || '{}');
+    throw new Error(`Gemini ${result.status}: ${err?.error?.message || result.body}`);
   }
+
+  const data = JSON.parse(result.body);
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+// Build Gemini system prompt with all live data injected
+function buildSystemPrompt(user, ctx) {
+  const today = new Date();
+
+  const sitesStr = (ctx.sites || [])
+    .map(s => `• ${s.name} (${s.type}, ${s.is_active ? 'Active' : 'Inactive'})`).join('\n');
+
+  const usersStr = (ctx.users || []).slice(0, 40)
+    .map(u => `• ${u.name} | ${u.email} | ${u.role.replace(/_/g,' ')} | ${u.is_active ? 'Active' : 'Disabled'}`).join('\n');
+
+  const stockStr = (ctx.stock || []).slice(0, 100).map(s => {
+    let exp = '';
+    if (s.expiry_date) {
+      const d = Math.ceil((new Date(s.expiry_date) - today) / 86400000);
+      exp = ` | ${d <= 0 ? 'EXPIRED' : 'Expires in ' + d + 'd'} (${s.expiry_date})`;
+    }
+    const site = (ctx.sites || []).find(x => x.id === s.site_id);
+    return `• ${s.material_name}: ${s.quantity} ${s.unit || 'units'} @ ${site ? site.name : 'Site '+s.site_id} (${s.category || 'General'})${exp}`;
+  }).join('\n');
+
+  return `You are the CDL AI Advisor for Canaan Developers Ltd — a smart, friendly, and highly knowledgeable construction site management assistant based in Nairobi, Kenya.
+
+You have LIVE real-time access to the CDL database. Use it to answer questions accurately and specifically.
+
+== CURRENT USER ==
+Name: ${user.name || 'User'} | Role: ${(user.role || '').replace(/_/g,' ')} | Email: ${user.email || ''}
+
+== ACTIVE SITES (${ctx.activeSiteCount || 0}) ==
+${sitesStr || 'None loaded'}
+
+== TEAM (${ctx.activeUserCount || 0} active) ==
+${usersStr || 'None loaded'}
+Default password for ALL accounts: canaan123
+
+== LIVE INVENTORY (${ctx.totalStockItems || 0} items, showing 100) ==
+${stockStr || 'None loaded'}
+
+== PENDING OPERATIONS ==
+• Material Requests: ${ctx.pendingReqCount || 0} pending
+• Inter-site Transfers: ${ctx.pendingTransferCount || 0} pending
+• GRNs awaiting approval: ${ctx.pendingGrnCount || 0}
+
+== INSTRUCTIONS ==
+- Respond naturally and conversationally, like a knowledgeable site manager
+- Use the live data above to give specific, accurate answers
+- When asked for user credentials/login: provide email + default password canaan123
+- For expiring items: calculate from today's date (${today.toISOString().split('T')[0]}) and highlight urgent ones
+- For stock questions: look up from the inventory above and give quantities and locations
+- Format nicely with **bold** for names and numbers
+- Keep responses concise (3-8 lines) unless detail is needed
+- If a question is completely unrelated to CDL operations, politely redirect
+- NEVER invent data — only use what's provided above`;
 }
 
 async function fetchLiveContext(user) {
@@ -53,29 +140,21 @@ async function fetchLiveContext(user) {
       supabaseQuery('grns?select=id,site_id,grn_number,invoice_number,status,total_value,supplier,created_at,items&limit=30'),
       supabaseQuery('transfers?select=id,from_site_id,to_site_id,status,created_at,material_name,quantity&limit=30')
     ]);
-
     const activeSites = (sites || []).filter(s => s.is_active);
     const activeUsers = (users || []).filter(u => u.is_active);
     const pendingReqs = (requests || []).filter(r => r.status === 'pending');
-    const pendingGrns = (grns || []).filter(g => g.status === 'pending');
-    const pendingTransfers = (transfers || []).filter(t => t.status === 'pending');
-
     return {
-      sites: sites || [],
-      activeSiteCount: activeSites.length,
-      users: users || [],
-      activeUserCount: activeUsers.length,
-      stock: stock || [],
-      totalStockItems: (stock || []).length,
-      pendingReqs,
-      pendingReqCount: pendingReqs.length,
-      pendingGrns,
-      pendingGrnCount: pendingGrns.length,
-      pendingTransfers,
-      pendingTransferCount: pendingTransfers.length,
+      sites: sites || [], activeSiteCount: activeSites.length,
+      users: users || [], activeUserCount: activeUsers.length,
+      stock: stock || [], totalStockItems: (stock || []).length,
+      pendingReqs, pendingReqCount: pendingReqs.length,
+      pendingGrns: (grns || []).filter(g => g.status === 'pending'),
+      pendingGrnCount: (grns || []).filter(g => g.status === 'pending').length,
+      pendingTransfers: (transfers || []).filter(t => t.status === 'pending'),
+      pendingTransferCount: (transfers || []).filter(t => t.status === 'pending').length,
     };
   } catch (err) {
-    console.warn('[ai-chat] Context fetch fallback:', err.message);
+    console.warn('[ai-chat] Context fetch error:', err.message);
     return {};
   }
 }
@@ -267,6 +346,8 @@ function generateDeepReasoning(prompt, user, ctx, history = []) {
   return `I checked our live system — we're currently managing **${ctx.activeSiteCount || 12} sites**, **${ctx.activeUserCount || 0} personnel**, and **${ctx.totalStockItems || 0} material records**.\n\nCould you rephrase? I can help with inventory, expiring items, user credentials, transfers, costs, and more.`;
 }
 
+
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -290,23 +371,25 @@ exports.handler = async (event) => {
 
   try {
     const authHeader = event.headers['authorization'] || event.headers['Authorization'];
-    let user = { role: 'admin', name: 'User' };
+    let user = { role: 'admin', name: 'User', id: null };
 
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const jwt = authHeader.slice(7);
-      const userRes = await httpsRequest(`${SUPABASE_URL}/auth/v1/user`, {
-        method: 'GET',
-        headers: { apikey: SERVICE_ROLE, Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
-      });
-
-      if (userRes.status === 200) {
-        const authUser = JSON.parse(userRes.body);
-        const profileRows = await supabaseQuery(`users?id=eq.${authUser.id}&select=id,role,name,is_active&limit=1`);
-        if (profileRows.length) user = profileRows[0];
-      }
+      try {
+        const userRes = await httpsRequest(`${SUPABASE_URL}/auth/v1/user`, {
+          method: 'GET',
+          headers: { apikey: SERVICE_ROLE, Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+        });
+        if (userRes.status === 200) {
+          const authUser = JSON.parse(userRes.body);
+          const profileRows = await supabaseQuery(`users?id=eq.${authUser.id}&select=id,role,name,email,is_active&limit=1`);
+          if (profileRows.length) user = { ...profileRows[0], id: authUser.id };
+          else user = { ...user, id: authUser.id };
+        }
+      } catch (_) {}
     }
 
-    const { prompt, systemPrompt, history } = JSON.parse(event.body || '{}');
+    const { prompt, history } = JSON.parse(event.body || '{}');
     if (!prompt || typeof prompt !== 'string') {
       return {
         statusCode: 400,
@@ -315,17 +398,38 @@ exports.handler = async (event) => {
       };
     }
 
-    const ctx = await fetchLiveContext(user);
-    const reply = generateDeepReasoning(prompt, user, ctx, history);
+    // Fetch live context AND Gemini key in parallel
+    const [ctx, geminiKey] = await Promise.all([
+      fetchLiveContext(user),
+      getGeminiKey()
+    ]);
+
+    let reply = '';
+
+    // Try Gemini first if key available
+    if (geminiKey) {
+      try {
+        const systemPrompt = buildSystemPrompt(user, ctx);
+        reply = await callGemini(geminiKey, systemPrompt, prompt, history || []);
+      } catch (geminiErr) {
+        console.warn('[ai-chat] Gemini failed, using rule engine:', geminiErr.message);
+        reply = generateDeepReasoning(prompt, user, ctx, history || []);
+        reply += '\n\n*Note: AI reasoning engine active — AI upgrade available once API key is configured.*';
+      }
+    } else {
+      // No Gemini key — use intelligent rule engine
+      reply = generateDeepReasoning(prompt, user, ctx, history || []);
+    }
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       body: JSON.stringify({
-        reply,
+        reply: reply || 'I am online and monitoring all CDL construction sites. What would you like to check?',
         role: user.role,
         remaining: Infinity,
-        liveContextSynced: true
+        liveContextSynced: true,
+        powered: geminiKey ? 'gemini-2.0-flash-lite' : 'cdl-rule-engine'
       })
     };
   } catch (err) {
@@ -334,7 +438,7 @@ exports.handler = async (event) => {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       body: JSON.stringify({
-        reply: 'I am online and monitoring all 12 CDL construction sites and live stock balances. What would you like to check?',
+        reply: 'I am online and monitoring all CDL sites and stock balances. What would you like to check?',
         role: 'user',
         remaining: Infinity
       })
