@@ -1,7 +1,7 @@
-// CDL Site Management — Service Worker v9.2
-// Cache-first for app shell, network-first for API calls
+// CDL Site Management — Service Worker v9.3
+// Cache-first for static app shell (GET only), network-first for APIs
 
-const CACHE_NAME = "cdl-v9.2";
+const CACHE_NAME = "cdl-v9.3";
 
 const APP_SHELL = [
   "/",
@@ -23,7 +23,7 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Activate: delete old caches (force refresh from v9.0)
+// Activate: delete old caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -35,13 +35,20 @@ self.addEventListener("activate", (event) => {
 
 // Fetch: cache-first for app shell, network-first for APIs
 self.addEventListener("fetch", (event) => {
+  // Non-GET requests (POST, PUT, DELETE, PATCH) cannot be cached by Cache Storage
+  if (event.request.method !== "GET") {
+    return;
+  }
+
   const url = new URL(event.request.url);
 
   const isAPI =
     url.hostname.includes("supabase.co") ||
     url.hostname.includes("generativelanguage.googleapis.com") ||
     url.hostname.includes("emailjs.com") ||
-    url.hostname.includes("groq.com");
+    url.hostname.includes("groq.com") ||
+    url.pathname.startsWith("/.netlify/") ||
+    url.pathname.startsWith("/api/");
 
   if (isAPI) {
     event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
@@ -51,8 +58,13 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches.match(event.request).then((cached) => {
       return cached || fetch(event.request).then((response) => {
+        if (!response || response.status !== 200 || response.type !== 'basic') {
+          return response;
+        }
         const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        caches.open(CACHE_NAME).then((cache) => {
+          try { cache.put(event.request, clone); } catch (e) {}
+        });
         return response;
       });
     })

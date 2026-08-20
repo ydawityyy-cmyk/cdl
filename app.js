@@ -166,7 +166,7 @@ function showApp() {
           background:var(--bg-600);border:1px solid var(--border-light);border-radius:16px;z-index:200;
           padding:16px;max-height:500px;overflow-y:auto;box-shadow:var(--shadow-lg);">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-            <h4 style="font-size:14px;font-weight:700;color:var(--text-100);">Notifications</h4>
+            <h2 style="font-size:14px;font-weight:700;color:var(--text-100);margin:0;">Notifications</h2>
             <button onclick="window._markAllRead()" style="background:transparent;border:none;color:var(--gold);cursor:pointer;font-size:11px;">Mark all read</button>
           </div>
           <div id="notif-list"></div>

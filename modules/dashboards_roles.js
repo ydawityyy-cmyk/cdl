@@ -64,8 +64,8 @@ async function renderStoreManager(container, user, role) {
       supabase.from("stock").select("site_id,quantity,unit_price,material_name,unit").limit(500),
       supabase.from("grns").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(30),
     ]);
-  const stock = stockRes.data || [];
-  const grns = grnsRes.data || [];
+  stock = stockRes.data || [];
+  grns = grnsRes.data || [];
   } catch (e) { console.error('[SM] data fetch failed', e); }
   const low = stock.filter(i => (i.quantity || 0) < 10 && (i.quantity || 0) > 0);
   const val = stock.reduce((s, i) => s + ((i.quantity || 0) * (i.unit_price || 0)), 0);
@@ -216,7 +216,7 @@ async function renderStorekeeper(container, user, role) {
   const skType = role.storekeeperType || "local";
   const siteParam = siteIds.length ? `site_id=in.(${siteIds.join(",")})&` : "";
   const stockRes = await supabase.from("stock").select("*").eq("storekeeper_type", skType).limit(100);
-  const stock = stockRes.data || [];
+  stock = stockRes.data || [];
   container.querySelector("#dash-kpis").innerHTML = [
     kpi("📦", stock.length, "Items Tracked", "var(--accent-blue)"),
     kpi("⚠️", stock.filter(i => (i.quantity || 0) < 10).length, "Low Stock", "var(--accent-orange)"),
@@ -229,7 +229,7 @@ async function renderStorekeeper(container, user, role) {
         <div style="font-size:40px;margin-bottom:12px;">📷</div>
         <h3 style="font-weight:600;margin-bottom:8px;color:var(--text-primary);">Scan Delivery Document</h3>
         <p style="color:var(--text-secondary);font-size:13px;margin-bottom:20px;">Photo → AI extracts all items</p>
-        <button onclick="navigate('grn')" class="btn btn-gold">Open GRN Scanner</button>
+        <button onclick="window._navigate('grn')" class="btn btn-gold">Open GRN Scanner</button>
       </div>
       <div class="card">
         <h3 style="font-size:14px;font-weight:600;margin-bottom:14px;color:var(--text-primary);">📦 My Stock</h3>
@@ -270,7 +270,7 @@ async function renderTransferOfficer(container, user, role) {
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
         <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);">🚚 My Active Transfers</h3>
-        <button onclick="navigate('transfers')" class="btn btn-gold btn-sm">Open Transfers →</button>
+        <button onclick="window._navigate('transfers')" class="btn btn-gold btn-sm">Open Transfers →</button>
       </div>
       ${active.length ? active.slice(0, 8).map(t => `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">
@@ -315,7 +315,7 @@ async function renderProcurementOfficer(container, user, role) {
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
         <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);">🛒 AM-Approved Requests</h3>
-        <button onclick="navigate('procurement')" class="btn btn-gold btn-sm">Open Procurement →</button>
+        <button onclick="window._navigate('procurement')" class="btn btn-gold btn-sm">Open Procurement →</button>
       </div>
       ${proc.length ? proc.slice(0, 8).map(p => `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">
@@ -350,7 +350,7 @@ async function renderProcurementOfficer(container, user, role) {
 async function renderDataHolder(container, user, role) {
   shell(container, user, "Data Holder", "GRN Verification · Discrepancy Flagging");
   const grnsRes = await supabase.from("grns").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(30);
-  const grns = grnsRes.data || [];
+  grns = grnsRes.data || [];
   container.querySelector("#dash-kpis").innerHTML = [
     kpi("📦", grns.length, "GRNs to Verify", "var(--accent-blue)"),
   ].join("");
@@ -360,7 +360,7 @@ async function renderDataHolder(container, user, role) {
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
         <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);">📦 GRN Verification Queue</h3>
-        <button onclick="navigate('grn')" class="btn btn-gold btn-sm">Open GRN Panel →</button>
+        <button onclick="window._navigate('grn')" class="btn btn-gold btn-sm">Open GRN Panel →</button>
       </div>
       ${grns.length ? grns.slice(0, 8).map(g => `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">
@@ -450,8 +450,8 @@ async function renderAdminDash(container, user, role) {
       supabase.from("users").select("id,name,role,is_active,email").limit(200),
       supabase.from("sites").select("id,name,is_active").limit(20),
     ]);
-    const users = usersRes.data || [];
-    const sites = sitesRes.data || [];
+    users = usersRes.data || [];
+    sites = sitesRes.data || [];
   } catch (e) { console.error('[ADMIN] data fetch failed', e); }
   const activeUsers = users.filter(u => u.is_active).length;
   const kpisEl = container.querySelector("#dash-kpis");
@@ -470,7 +470,7 @@ async function renderAdminDash(container, user, role) {
   if (!main) return;
   main.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
-      <div class="card hover-lift" style="cursor:pointer;" onclick="navigate('users')">
+      <div class="card hover-lift" style="cursor:pointer;" onclick="window._navigate('users')">
         <div style="font-size:32px;margin-bottom:12px;">👥</div>
         <h3 style="font-size:15px;font-weight:600;color:var(--text-primary);">Manage Users</h3>
         <p style="color:var(--text-muted);font-size:13px;margin-top:6px;">Create, edit and disable user accounts</p>
@@ -480,7 +480,7 @@ async function renderAdminDash(container, user, role) {
           ).join("")}
         </div>
       </div>
-      <div class="card hover-lift" style="cursor:pointer;" onclick="navigate('audit')">
+      <div class="card hover-lift" style="cursor:pointer;" onclick="window._navigate('audit')">
         <div style="font-size:32px;margin-bottom:12px;">🔍</div>
         <h3 style="font-size:15px;font-weight:600;color:var(--text-primary);">Audit Log</h3>
         <p style="color:var(--text-muted);font-size:13px;margin-top:6px;">Immutable record of every system action</p>
