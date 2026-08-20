@@ -175,3 +175,27 @@ async function saveHistory() {
     if (existing.length > 0) { await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history?id=eq.${existing[0].id}`, { method: "PATCH", headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }, body: JSON.stringify(payload) }); } else { await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history`, { method: "POST", headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, Prefer: "return=minimal" }, body: JSON.stringify(payload) }); }
   } catch (err) { console.error("[AI] saveHistory error:", err); }
 }
+
+window._aiClearChat = async function() {
+  _history = [];
+  const container = document.getElementById("ai-chat-messages");
+  if (container) {
+    container.innerHTML = "";
+    const welcome = document.createElement("div");
+    welcome.style.cssText = "align-self:flex-start;background:var(--bg-600);border:1px solid var(--border);color:var(--text-200);border-radius:12px 12px 12px 2px;padding:10px 14px;font-size:13px;";
+    welcome.innerHTML = "✦ Chat cleared. How can I help you with site inventory, shelf-life, or logistics today?";
+    container.appendChild(welcome);
+  }
+  
+  if (_user) {
+    try {
+      localStorage.removeItem(TODAY_KEY());
+      await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history?user_id=eq.${_user.id}`, {
+        method: 'DELETE',
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+      });
+    } catch(e) {
+      console.warn('[AI] Clear history sync:', e.message);
+    }
+  }
+};

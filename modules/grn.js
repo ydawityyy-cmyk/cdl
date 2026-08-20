@@ -379,50 +379,81 @@ function renderGRNItemRows(canAddNewMaterial) {
   const container = document.getElementById("grn-items-container");
   if (!container) return;
 
-  // Persist flag on container so _grnUpdateItem can read it during validation
   container.dataset.canAddNew = canAddNewMaterial ? "1" : "0";
   const knownNames = MATERIALS_DB.map(m => m.name);
 
-  container.innerHTML = grnItems.map((item, idx) => `
-    <div style="display:grid;grid-template-columns:2fr 0.8fr 1fr 1fr 28px;gap:8px;align-items:center;background:rgba(0,0,0,0.2);padding:8px;border-radius:6px;">
-      <div>
-        ${canAddNewMaterial
-          ? `<input type="text" list="materials-datalist" placeholder="Material Name (or type new material)" value="${item.name || ""}"
-               onchange="window._grnUpdateItem(${idx}, 'name', this.value)"
-               oninput="window._grnUpdateItem(${idx}, 'name', this.value)"
-               title="Store Manager: you may enter a new material name not yet in the database"
-               style="width:100%;background:var(--bg-800);border:1px solid var(--gold-faint, rgba(212,175,110,0.2));border-radius:6px;padding:7px 8px;color:var(--text-100);font-size:12px;" />`
-          : `<select onchange="window._grnUpdateItem(${idx}, 'name', this.value)"
-               title="Select from approved materials list"
-               style="width:100%;background:var(--bg-800);border:1px solid var(--border);border-radius:6px;padding:7px 4px;color:var(--text-100);font-size:12px;">
-               <option value="">— Select Material —</option>
-               ${knownNames.map(n => `<option value="${n}" ${item.name === n ? "selected" : ""}>${n}</option>`).join("")}
-             </select>`
-        }
+  container.innerHTML = grnItems.map((item, idx) => {
+    const perishable = isPerishable(item.name);
+    const hasName = (item.name || "").trim().length > 0;
+    
+    return `
+      <div style="background:rgba(0,0,0,0.25);border:1px solid ${perishable ? 'rgba(212,175,110,0.35)' : 'var(--border)'};border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;">
+        <div style="display:grid;grid-template-columns:2fr 0.8fr 1fr 1fr 28px;gap:8px;align-items:center;">
+          <div>
+            ${canAddNewMaterial
+              ? `<input type="text" list="materials-datalist" placeholder="Material Name (or type new)" value="${item.name || ""}"
+                   onchange="window._grnUpdateItem(${idx}, 'name', this.value)"
+                   oninput="window._grnUpdateItem(${idx}, 'name', this.value)"
+                   style="width:100%;background:var(--bg-800);border:1px solid var(--border);border-radius:6px;padding:7px 8px;color:var(--text-100);font-size:12px;" />`
+              : `<select onchange="window._grnUpdateItem(${idx}, 'name', this.value)"
+                   style="width:100%;background:var(--bg-800);border:1px solid var(--border);border-radius:6px;padding:7px 4px;color:var(--text-100);font-size:12px;">
+                   <option value="">— Select Material —</option>
+                   ${knownNames.map(n => `<option value="${n}" ${item.name === n ? "selected" : ""}>${n}</option>`).join("")}
+                 </select>`
+            }
+          </div>
+          <div>
+            <input type="number" min="0.1" step="any" placeholder="Qty" value="${item.quantity || 1}"
+              oninput="window._grnUpdateItem(${idx}, 'quantity', this.value)"
+              style="width:100%;background:var(--bg-800);border:1px solid var(--border);border-radius:6px;padding:7px 8px;color:var(--text-100);font-size:12px;" />
+          </div>
+          <div>
+            <select onchange="window._grnUpdateItem(${idx}, 'unit', this.value)"
+              style="width:100%;background:var(--bg-800);border:1px solid var(--border);border-radius:6px;padding:7px 4px;color:var(--text-100);font-size:12px;">
+              ${UOM_OPTIONS.map(u => `<option value="${u}" ${item.unit === u ? "selected" : ""}>${u}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <input type="number" min="0" step="any" placeholder="Unit KES" value="${item.unit_price || 0}"
+              oninput="window._grnUpdateItem(${idx}, 'unit_price', this.value)"
+              style="width:100%;background:var(--bg-800);border:1px solid var(--border);border-radius:6px;padding:7px 8px;color:var(--text-100);font-size:12px;" />
+          </div>
+          <div>
+            ${grnItems.length > 1 ? `
+              <button type="button" onclick="window._grnRemoveItemRow(${idx})" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>
+            ` : `<span style="color:var(--text-400);font-size:12px;">–</span>`}
+          </div>
+        </div>
+
+        <!-- Shelf Life & Batch Dates with Non-Perishable (PPR/Steel) Hint -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:11px;background:rgba(0,0,0,0.18);padding:6px 10px;border-radius:6px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            ${perishable ? `
+              <span style="color:var(--gold);font-weight:600;">⏳ Perishable Item (Mfg & Exp Dates Mandatory *)</span>
+            ` : hasName ? `
+              <span style="color:var(--text-300);">💡 Non-Perishable (e.g. PPR pipes, steel, ballast — No expiry date needed)</span>
+            ` : `
+              <span style="color:var(--text-300);">Batch / Expiry Dates (optional for non-perishables):</span>
+            `}
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="display:flex;align-items:center;gap:4px;">
+              <label style="color:var(--text-400);font-size:10px;">Mfg:</label>
+              <input type="date" value="${item.production_date || ""}"
+                onchange="window._grnUpdateItem(${idx}, 'production_date', this.value)"
+                style="background:var(--bg-800);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text-100);font-size:11px;" />
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+              <label style="color:var(--text-400);font-size:10px;">Exp:</label>
+              <input type="date" value="${item.expiry_date || ""}"
+                onchange="window._grnUpdateItem(${idx}, 'expiry_date', this.value)"
+                style="background:var(--bg-800);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text-100);font-size:11px;" />
+            </div>
+          </div>
+        </div>
       </div>
-      <div>
-        <input type="number" min="0.1" step="any" placeholder="Qty" value="${item.quantity || 1}"
-          oninput="window._grnUpdateItem(${idx}, 'quantity', this.value)"
-          style="width:100%;background:var(--bg-800);border:1px solid var(--border);border-radius:6px;padding:7px 8px;color:var(--text-100);font-size:12px;" />
-      </div>
-      <div>
-        <select onchange="window._grnUpdateItem(${idx}, 'unit', this.value)"
-          style="width:100%;background:var(--bg-800);border:1px solid var(--border);border-radius:6px;padding:7px 4px;color:var(--text-100);font-size:12px;">
-          ${UOM_OPTIONS.map(u => `<option value="${u}" ${item.unit === u ? "selected" : ""}>${u}</option>`).join("")}
-        </select>
-      </div>
-      <div>
-        <input type="number" min="0" step="any" placeholder="Unit KES" value="${item.unit_price || 0}"
-          oninput="window._grnUpdateItem(${idx}, 'unit_price', this.value)"
-          style="width:100%;background:var(--bg-800);border:1px solid var(--border);border-radius:6px;padding:7px 8px;color:var(--text-100);font-size:12px;" />
-      </div>
-      <div>
-        ${grnItems.length > 1 ? `
-          <button type="button" onclick="window._grnRemoveItemRow(${idx})" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button>
-        ` : `<span style="color:var(--text-400);font-size:12px;">–</span>`}
-      </div>
-    </div>
-  `).join("");
+    `;
+  }).join("");
 
   updateGRNCalculations();
 }
