@@ -196,7 +196,22 @@ async function renderStoreManager(container, user, role) {
   if (role.aiMsgsPerDay > 0 && !document.getElementById('ai-input')) {
     const main = container.querySelector('#dash-main') || container;
     main.innerHTML += `<div class="card" style="margin-top:20px;">
-      <h3 style="font-size:14px;font-weight:600;color:var(--accent-gold);margin-bottom:14px;">✦ AI Advisor</h3>
+      
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
+          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
+            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
+            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
+            ✨ New Chat / Clear
+          </button>
+          <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
+        </div>
+      </div>
       <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
@@ -288,7 +303,22 @@ async function renderTransferOfficer(container, user, role) {
   if (role.aiMsgsPerDay > 0 && !document.getElementById('ai-input')) {
     const main = container.querySelector('#dash-main') || container;
     main.innerHTML += `<div class="card" style="margin-top:20px;">
-      <h3 style="font-size:14px;font-weight:600;color:var(--accent-gold);margin-bottom:14px;">✦ AI Advisor</h3>
+      
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
+          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
+            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
+            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
+            ✨ New Chat / Clear
+          </button>
+          <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
+        </div>
+      </div>
       <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
@@ -334,7 +364,22 @@ async function renderProcurementOfficer(container, user, role) {
   if (role.aiMsgsPerDay > 0 && !document.getElementById('ai-input')) {
     const main = container.querySelector('#dash-main') || container;
     main.innerHTML += `<div class="card" style="margin-top:20px;">
-      <h3 style="font-size:14px;font-weight:600;color:var(--accent-gold);margin-bottom:14px;">✦ AI Advisor</h3>
+      
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
+          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
+            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
+            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
+            ✨ New Chat / Clear
+          </button>
+          <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
+        </div>
+      </div>
       <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
@@ -376,7 +421,22 @@ async function renderDataHolder(container, user, role) {
   if (role.aiMsgsPerDay > 0 && !document.getElementById('ai-input')) {
     const main = container.querySelector('#dash-main') || container;
     main.innerHTML += `<div class="card" style="margin-top:20px;">
-      <h3 style="font-size:14px;font-weight:600;color:var(--accent-gold);margin-bottom:14px;">✦ AI Advisor</h3>
+      
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
+          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
+            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
+            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
+            ✨ New Chat / Clear
+          </button>
+          <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
+        </div>
+      </div>
       <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
@@ -428,7 +488,22 @@ async function renderSiteOverseer(container, user, role) {
   if (role.aiMsgsPerDay > 0 && !document.getElementById('ai-input')) {
     const main = container.querySelector('#dash-main') || container;
     main.innerHTML += `<div class="card" style="margin-top:20px;">
-      <h3 style="font-size:14px;font-weight:600;color:var(--accent-gold);margin-bottom:14px;">✦ AI Advisor</h3>
+      
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
+          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
+            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
+            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
+            ✨ New Chat / Clear
+          </button>
+          <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
+        </div>
+      </div>
       <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"
@@ -493,7 +568,22 @@ async function renderAdminDash(container, user, role) {
   // AI Chat — only for roles with aiMsgsPerDay > 0
   if (role.aiMsgsPerDay > 0 && !document.getElementById('ai-input')) {
     main.innerHTML += `<div class="card" style="margin-top:20px;">
-      <h3 style="font-size:14px;font-weight:600;color:var(--accent-gold);margin-bottom:14px;">✦ AI Advisor · <span style="color:var(--text-muted);font-weight:400;float:right;">Unlimited messages</span></h3>
+      
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
+          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
+            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
+            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
+            ✨ New Chat / Clear
+          </button>
+          <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
+        </div>
+      </div>
       <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask about system status, users, stock…"
@@ -518,7 +608,22 @@ async function renderGeneric(container, user, role) {
   </div>`;
   if (hasAI) {
     main.innerHTML += `<div class="card" style="margin-top:20px;">
-      <h3 style="font-size:14px;font-weight:600;color:var(--accent-gold);margin-bottom:14px;">✦ AI Advisor</h3>
+      
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
+          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
+            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
+            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
+            ✨ New Chat / Clear
+          </button>
+          <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
+        </div>
+      </div>
       <div id="ai-chat-messages" style="height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
       <div style="display:flex;gap:8px;">
         <input id="ai-input" type="text" placeholder="Ask anything…"

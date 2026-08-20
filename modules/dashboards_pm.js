@@ -29,7 +29,22 @@ export async function renderPMDashboard(container, user) {
         <div id="pm-stock">Loading…</div>
       </div>
       <div class="card" style="display:flex;flex-direction:column;height:420px;">
-        <h3 style="font-family:var(--font-display);font-size:14px;margin-bottom:12px;">💬 AI Advisor</h3>
+        
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
+          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
+            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
+            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
+            ✨ New Chat / Clear
+          </button>
+          <span style="color:var(--text-300);font-size:11px;">5 msgs/day</span>
+        </div>
+      </div>
         <div id="ai-chat-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
         <div style="display:flex;gap:8px;">
           <input id="ai-input" type="text" placeholder="Ask about your site…"
