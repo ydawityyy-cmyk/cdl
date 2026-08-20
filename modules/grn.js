@@ -6,6 +6,25 @@ import { scanGRN, renderGRNPreview } from "./ai_grn.js";
 import { showToast, showModal, closeModal } from "../app.js";
 import { MATERIALS_DB, findMaterial } from "../data.js";
 
+// ─── Perishable Construction Materials Detector ──────────────────────────────
+export function isPerishable(name) {
+  if (!name) return false;
+  const lower = name.toLowerCase();
+  return lower.includes('cement') ||
+         lower.includes('sika') ||
+         lower.includes('chemical') ||
+         lower.includes('admixture') ||
+         lower.includes('waterproof') ||
+         lower.includes('grout') ||
+         lower.includes('epoxy') ||
+         lower.includes('resin') ||
+         lower.includes('paint') ||
+         lower.includes('primer') ||
+         lower.includes('sealant') ||
+         lower.includes('bitumen') ||
+         lower.includes('bonding');
+}
+
 const UOM_OPTIONS = ["Pcs", "Bags", "Kgs", "Tonnes", "Litres", "Meters", "M2", "M3", "Rolls", "Boxes", "Sets", "Lengths"];
 
 export async function renderGRN(container, user) {
@@ -340,12 +359,22 @@ async function openNewGRNModal(user, siteFilter) {
     const supplier = document.getElementById("g-supplier").value.trim();
 
     if (!siteId) { showToast("Select a destination site", "error"); return; }
+    if (!supplier) { showToast("Supplier / Vendor name is required", "error"); return; }
+    if (!grnNum && !invNum) { showToast("Provide at least a GRN / Delivery Note # or Invoice Number", "error"); return; }
     
     // Validate line items
-    const validItems = grnItems.filter(i => i.name.trim().length > 0 && parseFloat(i.quantity) > 0);
+    const validItems = grnItems.filter(i => (i.name || "").trim().length > 0 && parseFloat(i.quantity) > 0);
     if (!validItems.length) {
-      showToast("Add at least one material item with valid quantity", "error");
+      showToast("Add at least one material item with a name and valid quantity", "error");
       return;
+    }
+
+    // Check for perishable items requiring expiry date
+    for (const item of validItems) {
+      if (isPerishable(item.name) && !item.expiry_date) {
+        showToast(`Expiry date is mandatory for perishable item: "${item.name}"`, "error");
+        return;
+      }
     }
 
     const totalVal = validItems.reduce((s, i) => s + (parseFloat(i.total_price) || 0), 0);

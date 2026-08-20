@@ -356,7 +356,17 @@ function openManualGRNModal(user, skType, siteId) {
     <p style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Items</p>
     <div id="mg-items" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;">
       <div style="display:grid;grid-template-columns:3fr 1fr 1fr 1fr 20px;gap:5px;align-items:center;" data-row="0">
-        <input placeholder="Material" data-f="name" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;">
+        <select data-f="name" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;" onchange="
+  const u = window.MATERIALS_DB?.find(m => m.name === this.value)?.unit;
+  if (u) {
+    const row = this.closest('[data-row]');
+    const usel = row?.querySelector('[data-f=unit]');
+    if (usel) usel.value = u;
+  }
+">
+  <option value="">— Select Approved Material —</option>
+  ${MATERIALS_DB.map(m => `<option value="${m.name}">${m.name} (${m.unit || 'Pcs'})`).join('')}
+</select>
         <input placeholder="Qty" type="number" data-f="qty" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;">
         <select data-f="unit" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;">${UNITS.map(u=>`<option value="${u}">${u}</option>`).join("")}</select>
         <input placeholder="Price" type="number" data-f="price" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;">
@@ -370,7 +380,17 @@ function openManualGRNModal(user, skType, siteId) {
     const c = document.getElementById("mg-items");
     const i = c.children.length;
     c.insertAdjacentHTML("beforeend", `<div style="display:grid;grid-template-columns:3fr 1fr 1fr 1fr 20px;gap:5px;align-items:center;" data-row="${i}">
-      <input placeholder="Material" data-f="name" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;">
+      <select data-f="name" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;" onchange="
+  const u = window.MATERIALS_DB?.find(m => m.name === this.value)?.unit;
+  if (u) {
+    const row = this.closest('[data-row]');
+    const usel = row?.querySelector('[data-f=unit]');
+    if (usel) usel.value = u;
+  }
+">
+  <option value="">— Select Approved Material —</option>
+  ${MATERIALS_DB.map(m => `<option value="${m.name}">${m.name} (${m.unit || 'Pcs'})`).join('')}
+</select>
       <input placeholder="Qty" type="number" data-f="qty" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;">
       <select data-f="unit" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;">${UNITS.map(u=>`<option value="${u}">${u}</option>`).join("")}</select>
       <input placeholder="Price" type="number" data-f="price" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;">
