@@ -88,7 +88,10 @@ function setupChatHandlers(container) {
 async function sendMessage() {
   if (!_user) return;
   const limit = AI_MSG_LIMITS[_user.role] ?? 0;
-  if (limit !== Infinity && _msgCount >= limit) { appendMsg("system", `Daily limit of ${limit} messages reached. Resets tomorrow.`); return; }
+  if (limit !== Infinity && _msgCount >= limit) {
+    appendMsg("system", `Daily limit of ${limit} messages reached. Resets tomorrow.`);
+    return;
+  }
   const input = document.getElementById("ai-input");
   const text = input.value.trim();
   if (!text) return;
@@ -98,13 +101,37 @@ async function sendMessage() {
   _msgCount++;
   await updateMsgCountInSupabase(_user, _msgCount);
   const systemPrompt = getSystemPrompt(_user);
-  const history = _history.slice(-6).map(m => `${m.role === "user" ? "User" : "CDL AI"}: ${m.content}`).join("\n");
-  const fullPrompt = history ? `${history}\nUser: ${text}` : text;
-  const reply = await callAI(fullPrompt, systemPrompt);
-  thinking.remove();
-  appendMsg("ai", reply);
-  _history.push({ role: "user", content: text }, { role: "ai", content: reply });
-  saveHistory();
+  
+  // Pass clean history array and pure text prompt
+  const recentHistory = _history.slice(-10).map(m => ({
+    role: m.role === "user" ? "user" : "assistant",
+    content: m.content
+  }));
+
+  try {
+    const reply = await callAI(text, systemPrompt, recentHistory);
+    thinking.remove();
+    appendMsg("ai", reply);
+    _history.push({ role: "user", content: text }, { role: "ai", content: reply });
+    saveHistory();
+  } catch (err) {
+    thinking.remove();
+    appendMsg("system", `Error: ${err.message}`);
+  }
+}
+
+function formatMarkdown(text) {
+  if (!text) return "";
+  let html = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/^### (.*$)/gim, '<h4 style="color:var(--text-100);font-size:14px;font-weight:700;margin:8px 0 4px 0;">$1</h4>')
+    .replace(/^## (.*$)/gim, '<h3 style="color:var(--text-100);font-size:15px;font-weight:700;margin:10px 0 6px 0;">$1</h3>')
+    .replace(/\*\*(.*?)\*\*/gim, '<strong style="color:var(--text-100);font-weight:600;">$1</strong>')
+    .replace(/^• (.*$)/gim, '<div style="display:flex;gap:6px;margin:3px 0;"><span style="color:var(--gold);">•</span><span>$1</span></div>')
+    .replace(/\n/g, '<br>');
+  return html;
 }
 
 function appendMsg(role, text, temp = false) {
@@ -113,14 +140,26 @@ function appendMsg(role, text, temp = false) {
   const div = document.createElement("div");
   const isUser = role === "user";
   const isSystem = role === "system";
-  div.style.cssText = `max-width:85%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.5;${isUser?"align-self:flex-end;background:var(--gold);color:#0a0c10;border-radius:12px 12px 2px 12px;":isSystem?"align-self:center;background:rgba(231,76,60,0.1);color:#e74c3c;font-size:12px;border-radius:8px;":"align-self:flex-start;background:var(--bg-600);border:1px solid var(--border);color:var(--text-100);border-radius:12px 12px 12px 2px;"}`;
-  div.textContent = text;
+  div.style.cssText = `max-width:88%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.6;${
+    isUser
+      ? "align-self:flex-end;background:var(--gold);color:#0a0c10;border-radius:12px 12px 2px 12px;font-weight:500;"
+      : isSystem
+      ? "align-self:center;background:rgba(231,76,60,0.1);color:#e74c3c;font-size:12px;border-radius:8px;"
+      : "align-self:flex-start;background:var(--bg-600);border:1px solid var(--border);color:var(--text-200);border-radius:12px 12px 12px 2px;"
+  }`;
+  
+  if (isUser || isSystem || temp) {
+    div.textContent = text;
+  } else {
+    div.innerHTML = formatMarkdown(text);
+  }
+  
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
   return div;
 }
 
-async function loadHistory() {
+function loadHistory() {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history?user_id=eq.${_user.id}&agent_type=eq.main&limit=1`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
     const rows = await res.json();
