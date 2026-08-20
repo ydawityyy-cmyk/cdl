@@ -701,19 +701,19 @@ async function renderAdminDash(container, user, role) {
       }
     });
 
-    // ─── 🔐 Credential Vault ──────────────────────────────────────────────────
-    const vaultWrapper = document.createElement('div');
-    vaultWrapper.style.cssText = 'margin-top:24px;';
-    vaultWrapper.innerHTML = `
+    // ─── 👥 User Directory & Access Control (SEC-01 Hardened) ──────────────────
+    const userDirWrapper = document.createElement('div');
+    userDirWrapper.style.cssText = 'margin-top:24px;';
+    userDirWrapper.innerHTML = `
       <div class="card">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-          <span style="font-size:22px;">🔐</span>
-          <h3 style="margin:0;font-size:1rem;font-weight:700;color:var(--text-primary)">Credential Vault</h3>
+          <span style="font-size:22px;">👥</span>
+          <h3 style="margin:0;font-size:1rem;font-weight:700;color:var(--text-primary)">User Directory & Security</h3>
           <span style="margin-left:auto;font-size:0.73rem;color:var(--text-muted);">Admin · CEO · Owner only</span>
-          <button id="vault-refresh-btn" style="padding:5px 12px;border-radius:8px;border:1px solid #6366f1;background:transparent;color:#818cf8;cursor:pointer;font-size:0.78rem;font-weight:600;margin-left:8px;">↻ Refresh</button>
+          <button id="userdir-refresh-btn" style="padding:5px 12px;border-radius:8px;border:1px solid #6366f1;background:transparent;color:#818cf8;cursor:pointer;font-size:0.78rem;font-weight:600;margin-left:8px;">↻ Refresh</button>
         </div>
         <p style="color:var(--text-muted);font-size:0.8rem;margin:0 0 14px;">
-          Every user account created in the system is automatically saved here — passwords included.
+          Authorized users and authentication status in Supabase. Passwords are securely hashed by Supabase Auth.
         </p>
         <div style="overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;font-size:0.81rem;">
@@ -722,57 +722,71 @@ async function renderAdminDash(container, user, role) {
                 <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;">Name</th>
                 <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;">Email</th>
                 <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;">Role</th>
-                <th style="text-align:left;padding:8px 10px;color:#34d399;font-weight:600;">Password</th>
-                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;">Saved</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;">Status</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;">Assigned Sites</th>
+                <th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;">Actions</th>
               </tr>
             </thead>
-            <tbody id="cred-vault-tbody">
-              <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text-muted);">Loading…</td></tr>
+            <tbody id="userdir-tbody">
+              <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted);">Loading users…</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     `;
-    if (main) main.appendChild(vaultWrapper);
+    if (main) main.appendChild(userDirWrapper);
 
-    async function loadCredentialVault() {
-      const tbody = document.getElementById('cred-vault-tbody');
+    async function loadUserDirectory() {
+      const tbody = document.getElementById('userdir-tbody');
       if (!tbody) return;
-      tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text-muted);">Loading…</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted);">Loading users…</td></tr>';
       try {
         const { data, error } = await supabase
-          .from('user_credentials')
-          .select('name,email,role,plain_password,created_at')
+          .from('users')
+          .select('id,name,email,role,is_active,site_ids,created_at')
           .order('role', { ascending: true })
           .order('name', { ascending: true });
         if (error) throw error;
         if (!data || !data.length) {
-          tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text-muted);">No credentials stored yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--text-muted);">No users found.</td></tr>';
           return;
         }
-        tbody.innerHTML = data.map(c => `
-          <tr style="border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.15s;"
-              onmouseover="this.style.background='rgba(255,255,255,0.04)'"
-              onmouseout="this.style.background=''">
-            <td style="padding:8px 10px;font-weight:600;color:var(--text-primary);">${c.name}</td>
-            <td style="padding:8px 10px;color:var(--text-muted);font-family:monospace;font-size:0.78rem;">${c.email}</td>
-            <td style="padding:8px 10px;">
-              <span style="background:rgba(99,102,241,0.15);color:#818cf8;padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:600;">
-                ${c.role.replace(/_/g,' ')}
-              </span>
-            </td>
-            <td style="padding:8px 10px;font-family:monospace;font-weight:700;color:#34d399;letter-spacing:0.5px;">${c.plain_password}</td>
-            <td style="padding:8px 10px;color:var(--text-muted);font-size:0.76rem;">${new Date(c.created_at).toLocaleDateString('en-KE')}</td>
-          </tr>
-        `).join('');
+        tbody.innerHTML = data.map(u => {
+          const siteNames = (u.site_ids || []).map(sid => SITES.find(s => s.id === sid)?.name || '#' + sid).join(', ') || 'Portfolio / All';
+          const isActive = u.is_active !== false;
+          return `
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.15s;"
+                onmouseover="this.style.background='rgba(255,255,255,0.04)'"
+                onmouseout="this.style.background=''">
+              <td style="padding:8px 10px;font-weight:600;color:var(--text-primary);">${u.name || 'Unnamed User'}</td>
+              <td style="padding:8px 10px;color:var(--text-muted);font-family:monospace;font-size:0.78rem;">${u.email}</td>
+              <td style="padding:8px 10px;">
+                <span style="background:rgba(99,102,241,0.15);color:#818cf8;padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:600;">
+                  ${(u.role || '').replace(/_/g,' ')}
+                </span>
+              </td>
+              <td style="padding:8px 10px;">
+                <span style="background:${isActive ? 'rgba(46,204,113,0.15)' : 'rgba(231,76,60,0.15)'};color:${isActive ? '#2ecc71' : '#e74c3c'};padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:600;">
+                  ${isActive ? '● Active' : '○ Inactive'}
+                </span>
+              </td>
+              <td style="padding:8px 10px;color:var(--text-muted);font-size:0.76rem;">${siteNames}</td>
+              <td style="padding:8px 10px;">
+                <button onclick="window._navigate('users')" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--text-primary);cursor:pointer;font-size:0.75rem;">
+                  Manage
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
       } catch(err) {
-        tbody.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#f87171;">Error loading vault: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:#f87171;">Error loading users: ${err.message}</td></tr>`;
       }
     }
 
-    loadCredentialVault();
-    document.getElementById('vault-refresh-btn')?.addEventListener('click', loadCredentialVault);
-    // ─── end Credential Vault ──────────────────────────────────────────────────
+    loadUserDirectory();
+    document.getElementById('userdir-refresh-btn')?.addEventListener('click', loadUserDirectory);
+    // ─── end User Directory ───────────────────────────────────────────────────
 
   }
 }
