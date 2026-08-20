@@ -159,7 +159,7 @@ function appendMsg(role, text, temp = false) {
   return div;
 }
 
-function loadHistory() {
+async function loadHistory() {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history?user_id=eq.${_user.id}&agent_type=eq.main&limit=1`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
     const rows = await res.json();
