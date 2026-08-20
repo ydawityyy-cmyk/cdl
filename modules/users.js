@@ -223,8 +223,21 @@ async function userFormModal(currentUser, editUser) {
           const { error } = await supabase.from("users").update(payload).eq("id", uid);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from("users").insert(payload);
+          const { data: inserted, error } = await supabase.from("users").insert(payload).select().single();
           if (error) throw error;
+          // Also save to credential vault
+          try {
+            await supabase.from("user_credentials").upsert({
+              user_id: inserted?.id,
+              name,
+              email: email.toLowerCase(),
+              role,
+              plain_password: pw || 'canaan2024',
+              site_ids: sites.join(','),
+              created_by: 'fallback-direct',
+              notes: 'Created via direct DB (fallback)'
+            }, { onConflict: 'email' });
+          } catch (_) { /* vault save failure is non-fatal */ }
         }
         closeModal();
         showToast(`User saved in database`, "success");

@@ -98,7 +98,7 @@ exports.handler = async (event) => {
       };
     }
 
-    const userPassword = password || 'canaan123';
+    const userPassword = password || 'canaan2024';
     let targetUserId = null;
 
     // 3. Create or Update user in Supabase Auth
@@ -176,6 +176,32 @@ exports.handler = async (event) => {
     }
 
     const savedRecord = JSON.parse(upsertRes.body)[0] || userPayload;
+
+    // 5. Auto-save to user_credentials vault (admin-only, permanent record)
+    try {
+      const credPayload = {
+        user_id: targetUserId,
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        role,
+        plain_password: userPassword,
+        site_ids: Array.isArray(site_ids) ? site_ids.join(',') : '',
+        created_by: callerId,
+        notes: 'Created via Admin Dashboard'
+      };
+      await httpsRequest(`${SUPABASE_URL}/rest/v1/user_credentials`, {
+        method: 'POST',
+        headers: {
+          apikey: SERVICE_ROLE,
+          Authorization: `Bearer ${SERVICE_ROLE}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal'
+        }
+      }, JSON.stringify(credPayload));
+      console.log('[admin-create-user] Credentials saved to vault for:', email);
+    } catch (credErr) {
+      console.warn('[admin-create-user] Could not save to credentials vault:', credErr.message);
+    }
 
     return {
       statusCode: 200,
