@@ -4,6 +4,13 @@
 
 [functions]
   directory = ".netlify/functions"
+  node_bundler = "esbuild"
+
+[functions.ai-chat]
+  timeout = 26
+
+[functions.backup_daily]
+  schedule = "0 0 * * *"
 
 [[redirects]]
   from = "/rest/v1/*"
@@ -17,6 +24,3 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-
-[functions.backup_daily]
-  schedule = "0 0 * * *"
