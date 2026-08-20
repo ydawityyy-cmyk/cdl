@@ -160,6 +160,12 @@ function generateDeepReasoning(prompt, user, ctx, history = []) {
     return `Here is the latest snapshot for **${matchedSite.name}**:\n\n• **Type**: ${matchedSite.type.toUpperCase()}\n• **Status**: ${matchedSite.is_active ? '✅ Active' : '⏸️ Inactive'}\n• **Pending Requests**: ${siteReqs.length} material requisition(s)\n• **Total Inventory Lines**: ${siteStock.length} items\n\n**Key Stock on Site:**\n${stockList}`;
   }
 
+  // 4b. LIST ALL SITES (catch "show all sites", "list sites", "all projects" early)
+  if ((q.includes('show') || q.includes('list') || q.includes('all')) && (q.includes('site') || q.includes('project') || q.includes('location'))) {
+    const list = sites.map(s => `• **${s.name}** (${s.type})`).join('\n');
+    return `CDL is currently operating **${ctx.activeSiteCount || sites.length} active projects** in Nairobi:\n\n${list}\n\nAll sites are connected to the central inventory and requisition network.`;
+  }
+
   // 5. LOW STOCK & REORDER INQUIRIES
   if (q.includes('low stock') || q.includes('shortage') || q.includes('running low') || q.includes('reorder') || q.includes('depleted') || q.includes('out of stock')) {
     const lowStock = stock.filter(item => {
