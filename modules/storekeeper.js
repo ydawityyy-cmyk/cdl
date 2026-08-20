@@ -1,3 +1,4 @@
+import { sendNotif } from "./notifs.js";
 // ============================================================
 // CDL Site Management — modules/storekeeper.js
 // Storekeeper dashboard: GRN scanner, pending issues, incident reports.
@@ -491,6 +492,9 @@ async function handleStockIssue(user, reqId, reqJson, skType) {
         if (stockErr) throw stockErr;
       }
 
+      if (req?.requested_by) {
+        await sendNotif(req.requested_by, "📦 Material Issued & Ready", `${name} (${qty} ${req.unit || ''}) has been issued by Storekeeper ${user.name}. Please collect at store.`, "material_issued", reqId);
+      }
       await logAudit({ action: "stock_issued", module: "storekeeper", record_id: reqId, before: { quantity: stock?.quantity }, after: { quantity: (stock?.quantity || 0) - qty }, reason: `Issued ${qty}×${name} by ${user.name}` });
       closeModal();
       showToast(`Issued ${qty} × ${name}`, "success");

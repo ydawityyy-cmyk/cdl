@@ -191,72 +191,177 @@ async function submitRequest(user,siteFilter) {
 }
 
 function openRequestModal(user, siteFilter) {
-  showModal(`<h2 style="font-size:18px;font-weight:700;color:var(--text-100);margin-bottom:20px;">New Material Request</h2>
-<div style="display:flex;flex-direction:column;gap:16px;">
-  <div>
-    <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-400);margin-bottom:6px;">Site</label>
-    <select id="rq-site" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-100);">
-      ${SITES.filter(s => siteFilter.includes(s.id)).map(s => `<option value="${s.id}">${s.name}</option>`).join("")}
-    </select>
-  </div>
-  <div>
-    <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-400);margin-bottom:6px;">Material</label>
-    <select id="rq-material" onchange="window._rqMaterialChange()" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-100);">
-      <option value="">Select material</option>
-      ${MATERIALS_DB.map(m => `<option value="${m.name}">${m.name}</option>`).join("")}
-      <option value="__NEW__">My material isn't listed</option>
-    </select>
-    <input type="text" id="rq-material-new" placeholder="Enter new material name" style="display:none; margin-top:8px; width:100%; padding:8px; border:1px solid var(--border);border-radius:4px; background:var(--bg-700); color:var(--text-100);">
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-    <div>
-      <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-400);margin-bottom:6px;">Quantity</label>
-      <input id="rq-qty" type="number" min="0.1" value="1" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-100);">
-    </div>
-    <div>
-      <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-400);margin-bottom:6px;">Unit</label>
-      <input id="rq-unit" type="text" placeholder="Pcs, Kgs…" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-100);">
-    </div>
-    <div>
-      <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-400);margin-bottom:6px;">Urgency</label>
-      <select id="rq-urgency" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-100);">
-        <option value="low">Low</option>
-        <option value="normal" selected>Normal</option>
-        <option value="high">High</option>
-        <option value="critical">Critical</option>
-      </select>
-    </div>
-  </div>
-  <div>
-    <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-400);margin-bottom:6px;">Purpose / Notes</label>
-    <input id="rq-purpose" type="text" placeholder="e.g. Column 3 formwork, Phase 2" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-100);">
-  </div>
-  <div style="display:flex;gap:12px;">
-    <button onclick="window._reqSubmitNew('${user.id}')" class="btn btn-gold" style="flex:1;">Submit Request</button>
-    <button onclick="window._closeModal()" class="btn btn-ghost">Cancel</button>
-  </div>
-</div>`);
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  showModal(`
+    <div style="max-height:82vh;overflow-y:auto;padding-right:4px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+        <span style="font-size:24px;">📋</span>
+        <div>
+          <h2 style="font-size:18px;font-weight:700;color:var(--text-100);margin:0;">New Material Requisition</h2>
+          <p style="font-size:12px;color:var(--text-400);margin:2px 0 0;">All fields marked with <span style="color:#ef4444;">*</span> are mandatory for PM approval.</p>
+        </div>
+      </div>
 
-  // Set up submit handler
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        
+        <!-- SECTION 1: LOCATION & STORE DESTINATION -->
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:12px;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent-gold);margin-bottom:8px;">1. Site & Store Destination</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Site <span style="color:#ef4444;">*</span></label>
+              <select id="rq-site" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
+                ${SITES.filter(s => siteFilter.includes(s.id)).map(s => `<option value="${s.id}">${s.name}</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Store Section <span style="color:#ef4444;">*</span></label>
+              <select id="rq-store-type" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
+                <option value="local">Local Materials Store</option>
+                <option value="imported">Imported Materials Store</option>
+                <option value="scaffolding">Scaffolding & Heavy Formwork</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 2: TRADE & ACTIVITY -->
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:12px;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent-gold);margin-bottom:8px;">2. Trade & Department</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Trade / Department <span style="color:#ef4444;">*</span></label>
+              <select id="rq-department" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
+                <option value="Civil & Concrete">Civil & Concrete Works</option>
+                <option value="Structural Steel">Structural Steel & Rebar</option>
+                <option value="Masonry & Walling">Masonry & Walling</option>
+                <option value="Electrical">Electrical Installation</option>
+                <option value="Plumbing & Drainage">Plumbing & Drainage</option>
+                <option value="Carpentry & Formwork">Carpentry & Formwork</option>
+                <option value="Plaster & Finishes">Plaster, Screed & Tiling</option>
+                <option value="Painting & Waterproofing">Painting & Waterproofing</option>
+                <option value="Site Safety & Logistics">Site Safety & Logistics</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Target Floor / Work Zone <span style="color:#ef4444;">*</span></label>
+              <input id="rq-location" type="text" placeholder="e.g. Block A - 2nd Floor Slab" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 3: MATERIAL & QUANTITY -->
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:12px;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent-gold);margin-bottom:8px;">3. Material & Quantity</div>
+          <div style="margin-bottom:10px;">
+            <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Approved Material Catalog <span style="color:#ef4444;">*</span></label>
+            <select id="rq-material" onchange="window._rqMaterialChange()" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
+              <option value="">-- Select Approved Material --</option>
+              ${MATERIALS_DB.map(m => `<option value="${m.name}">${m.name} (${m.category})</option>`).join("")}
+              <option value="__NEW__">➕ Propose New Material (Requires Approval)</option>
+            </select>
+            <input type="text" id="rq-material-new" placeholder="Enter custom material name for approval" style="display:none;margin-top:8px;width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-700);color:var(--text-100);font-size:13px;">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div>
+              <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Quantity <span style="color:#ef4444;">*</span></label>
+              <input id="rq-qty" type="number" min="0.1" step="any" placeholder="0" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
+            </div>
+            <div>
+              <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Unit <span style="color:#ef4444;">*</span></label>
+              <input id="rq-unit" type="text" placeholder="Bags, Pcs, Kgs…" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
+            </div>
+            <div>
+              <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Urgency Level <span style="color:#ef4444;">*</span></label>
+              <select id="rq-urgency" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
+                <option value="low">Low (Next Week)</option>
+                <option value="normal" selected>Normal (2-3 Days)</option>
+                <option value="high">High (Tomorrow)</option>
+                <option value="critical">Critical (Immediate / Stoppage)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 4: MANDATORY PURPOSE & REQUIRED DATE -->
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:12px;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent-gold);margin-bottom:8px;">4. Purpose & Timeline (Mandatory)</div>
+          <div style="margin-bottom:10px;">
+            <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Purpose / Work Scope Description <span style="color:#ef4444;">* (Mandatory)</span></label>
+            <textarea id="rq-purpose" rows="2" placeholder="e.g. Foundation blinding and column bases at Aura Peponi, week 34" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;resize:vertical;"></textarea>
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Required On Site By Date <span style="color:#ef4444;">*</span></label>
+            <input id="rq-date" type="date" value="${tomorrow}" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
+          </div>
+        </div>
+
+        <!-- SUBMISSION ACTIONS -->
+        <div style="display:flex;gap:12px;margin-top:6px;">
+          <button onclick="window._reqSubmitNew('${user.id}')" class="btn btn-gold" style="flex:1;padding:12px;font-size:14px;font-weight:700;">
+            ✓ Submit Request for PM Approval
+          </button>
+          <button onclick="window._closeModal()" class="btn btn-ghost" style="padding:12px;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `);
+
+  // Auto-fill Unit on Material Select
+  window._rqMaterialChange = function() {
+    const select = document.getElementById("rq-material");
+    const newMaterialInput = document.getElementById("rq-material-new");
+    const unitInput = document.getElementById("rq-unit");
+    if (!select) return;
+
+    if (select.value === "__NEW__") {
+      newMaterialInput.style.display = "block";
+      if (unitInput) unitInput.value = "";
+    } else {
+      newMaterialInput.style.display = "none";
+      const found = MATERIALS_DB.find(m => m.name === select.value);
+      if (found && unitInput && !unitInput.value) {
+        unitInput.value = found.unit || "Pcs";
+      }
+    }
+  };
+
+  // Submit Handler with Strict Mandatory Validation
   window._reqSubmitNew = async (userId) => {
-    const siteId = parseInt(document.getElementById("rq-site").value);
-    let material = document.getElementById("rq-material").value.trim();
-    const qty = parseFloat(document.getElementById("rq-qty").value);
-    const unit = document.getElementById("rq-unit").value.trim();
-    const urgency = document.getElementById("rq-urgency").value;
-    const purpose = document.getElementById("rq-purpose").value.trim();
+    const siteId = parseInt(document.getElementById("rq-site")?.value || "0");
+    const storeType = document.getElementById("rq-store-type")?.value || "local";
+    const department = document.getElementById("rq-department")?.value || "";
+    const location = (document.getElementById("rq-location")?.value || "").trim();
+    let material = (document.getElementById("rq-material")?.value || "").trim();
+    const qty = parseFloat(document.getElementById("rq-qty")?.value || "0");
+    const unit = (document.getElementById("rq-unit")?.value || "").trim();
+    const urgency = document.getElementById("rq-urgency")?.value || "normal";
+    const purpose = (document.getElementById("rq-purpose")?.value || "").trim();
+    const requiredDate = document.getElementById("rq-date")?.value || "";
 
-    if (!material) { showToast("Material required", "error"); return; }
-    if (!qty || qty <= 0) { showToast("Valid quantity required", "error"); return; }
+    // Validation
+    if (!siteId) { showToast("Site selection is mandatory", "error"); return; }
+    if (!material) { showToast("Material selection is mandatory", "error"); return; }
+    if (!qty || isNaN(qty) || qty <= 0) { showToast("Enter a valid quantity greater than 0", "error"); return; }
+    if (!unit) { showToast("Unit of measure is required (e.g. Bags, Pcs)", "error"); return; }
+    
+    // MANDATORY PURPOSE CHECK
+    if (!purpose || purpose.length < 5) {
+      showToast("Purpose / Section of Work is mandatory (e.g. Foundation blinding, week 34)", "error");
+      document.getElementById("rq-purpose")?.focus();
+      return;
+    }
 
     if (material === "__NEW__") {
-      const custom = document.getElementById("rq-material-new").value.trim();
-      if (!custom) { showToast("Enter new material name", "error"); return; }
+      const custom = (document.getElementById("rq-material-new")?.value || "").trim();
+      if (!custom) { showToast("Enter the new proposed material name", "error"); return; }
       const result = await checkAndQueueNewMaterial(custom, siteId, "request", userId, { name: user.name });
       if (result.isNew) { showToast(`"${custom}" queued for approval. Request submitted.`, "info"); }
       else if (result.alreadyQueued) { showToast(`"${custom}" already pending approval. Request submitted.`, "info"); }
-      else { material = custom; }
+      material = custom;
     }
+
+    const fullPurpose = `[${department}] ${purpose}${location ? ' (Location: ' + location + ')' : ''}${requiredDate ? ' [Needed by: ' + requiredDate + ']' : ''}`;
 
     try {
       const { data: saved, error } = await supabase
@@ -268,7 +373,7 @@ function openRequestModal(user, siteFilter) {
           quantity: qty,
           unit: unit || null,
           urgency,
-          purpose: purpose || null,
+          purpose: fullPurpose,
           status: "pending"
         })
         .select()
@@ -277,18 +382,13 @@ function openRequestModal(user, siteFilter) {
       await logAudit({ action: "request_created", module: "requests", record_id: saved.id });
       closeModal();
       showToast("Request submitted for PM approval", "success");
+      
+      // Auto reload requests tab if open
+      if (window._navigate) {
+        window._navigate('requests');
+      }
     } catch (err) {
-      showToast(`Error: ${err.message}`, "error");
-    }
-  };
-
-  window._rqMaterialChange = function() {
-    const select = document.getElementById("rq-material");
-    const newMaterialInput = document.getElementById("rq-material-new");
-    if (select.value === "__NEW__") {
-      newMaterialInput.style.display = "block";
-    } else {
-      newMaterialInput.style.display = "none";
+      showToast(`Error submitting request: ${err.message}`, "error");
     }
   };
 }
