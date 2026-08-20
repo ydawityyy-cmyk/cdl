@@ -1,24 +1,27 @@
 // CDL — modules/ai_chat.js
 import { callAI } from "./ai_engine.js";
 import { getSystemPrompt } from "./ai_roles.js";
-import { AI_MSG_LIMITS, SUPABASE_URL, SUPABASE_ANON_KEY } from "../config.js";
+import { AI_MSG_LIMITS, supabase } from "../config.js";
 import { ROLES } from "./roles.js";
 
 async function getMsgCountFromSupabase(user) {
   if (!user) return 0;
   const today = new Date().toDateString();
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_limits?user_id=eq.${user.id}&date=eq.${today}&select=count`, {
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-    });
-    if (!res.ok) return 0;
-    const rows = await res.json();
-    if (rows.length > 0) {
-      return rows[0].count;
+    const { data, error } = await supabase
+      .from('agent_chat_limits')
+      .select('count')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .limit(1);
+
+    if (error) return 0;
+    if (data && data.length > 0) {
+      return data[0].count || 0;
     }
     return 0;
   } catch (e) {
-    console.error('[AI] getMsgCountFromSupabase error:', e);
+    console.warn('[AI] getMsgCountFromSupabase:', e.message);
     return 0;
   }
 }
@@ -27,29 +30,25 @@ async function updateMsgCountInSupabase(user, count) {
   if (!user) return;
   const today = new Date().toDateString();
   try {
-    // First, check if a record exists for today
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_limits?user_id=eq.${user.id}&date=eq.${today}&select=id`, {
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-    });
-    if (!res.ok) return;
-    const rows = await res.json();
-    if (rows.length > 0) {
-      // Update existing record
-      await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_limits?id=eq.${rows[0].id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-        body: JSON.stringify({ count })
-      });
+    const { data: existing } = await supabase
+      .from('agent_chat_limits')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      await supabase
+        .from('agent_chat_limits')
+        .update({ count })
+        .eq('id', existing[0].id);
     } else {
-      // Insert new record
-      await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_limits`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, Prefer: 'return=minimal' },
-        body: JSON.stringify({ user_id: user.id, date: today, count })
-      });
+      await supabase
+        .from('agent_chat_limits')
+        .insert({ user_id: user.id, date: today, count });
     }
   } catch (e) {
-    console.error('[AI] updateMsgCountInSupabase error:', e);
+    console.warn('[AI] updateMsgCountInSupabase:', e.message);
   }
 }
 
@@ -65,7 +64,7 @@ export async function initAIChat(user, container) {
   if (limit > 0) {
     _msgCount = await getMsgCountFromSupabase(user);
     setupChatHandlers(container);
-    loadHistory();
+    await loadHistory();
   } else {
     _msgCount = 0;
     setupChatHandlers(container);
@@ -102,7 +101,6 @@ async function sendMessage() {
   await updateMsgCountInSupabase(_user, _msgCount);
   const systemPrompt = getSystemPrompt(_user);
   
-  // Pass clean history array and pure text prompt
   const recentHistory = _history.slice(-10).map(m => ({
     role: m.role === "user" ? "user" : "assistant",
     content: m.content
@@ -113,7 +111,7 @@ async function sendMessage() {
     thinking.remove();
     appendMsg("ai", reply);
     _history.push({ role: "user", content: text }, { role: "ai", content: reply });
-    saveHistory();
+    await saveHistory();
   } catch (err) {
     thinking.remove();
     appendMsg("system", `Error: ${err.message}`);
@@ -160,20 +158,57 @@ function appendMsg(role, text, temp = false) {
 }
 
 async function loadHistory() {
+  if (!_user) return;
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history?user_id=eq.${_user.id}&agent_type=eq.main&limit=1`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
-    const rows = await res.json();
-    if (rows.length && rows[0].messages) { _history = rows[0].messages.slice(-10); const container = document.getElementById("ai-chat-messages"); if (container && _history.length) _history.forEach(m => appendMsg(m.role, m.content)); }
-  } catch {}
+    const { data, error } = await supabase
+      .from('agent_chat_history')
+      .select('messages')
+      .eq('user_id', _user.id)
+      .limit(1);
+
+    if (error) return;
+    if (data && data.length && data[0].messages) {
+      _history = (data[0].messages || []).slice(-10);
+      const container = document.getElementById("ai-chat-messages");
+      if (container && _history.length) {
+        container.innerHTML = "";
+        _history.forEach(m => appendMsg(m.role, m.content));
+      }
+    }
+  } catch (e) {
+    console.warn('[AI] loadHistory:', e.message);
+  }
 }
 
 async function saveHistory() {
   if (!_user || _history.length === 0) return;
   try {
-    const existing = await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history?user_id=eq.${_user.id}&agent_type=eq.main&select=id`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }).then(r => r.json()).catch(() => []);
-    const payload = { user_id: _user.id, agent_type: "main", messages: _history.slice(-20), updated_at: new Date().toISOString() };
-    if (existing.length > 0) { await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history?id=eq.${existing[0].id}`, { method: "PATCH", headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }, body: JSON.stringify(payload) }); } else { await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history`, { method: "POST", headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, Prefer: "return=minimal" }, body: JSON.stringify(payload) }); }
-  } catch (err) { console.error("[AI] saveHistory error:", err); }
+    const { data: existing } = await supabase
+      .from('agent_chat_history')
+      .select('id')
+      .eq('user_id', _user.id)
+      .limit(1);
+
+    const payload = {
+      user_id: _user.id,
+      agent_type: "main",
+      messages: _history.slice(-20),
+      updated_at: new Date().toISOString()
+    };
+
+    if (existing && existing.length > 0) {
+      await supabase
+        .from('agent_chat_history')
+        .update(payload)
+        .eq('id', existing[0].id);
+    } else {
+      await supabase
+        .from('agent_chat_history')
+        .insert(payload);
+    }
+  } catch (err) {
+    console.warn("[AI] saveHistory error:", err.message);
+  }
 }
 
 window._aiClearChat = async function() {
@@ -190,10 +225,10 @@ window._aiClearChat = async function() {
   if (_user) {
     try {
       localStorage.removeItem(TODAY_KEY());
-      await fetch(`${SUPABASE_URL}/rest/v1/agent_chat_history?user_id=eq.${_user.id}`, {
-        method: 'DELETE',
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-      });
+      await supabase
+        .from('agent_chat_history')
+        .delete()
+        .eq('user_id', _user.id);
     } catch(e) {
       console.warn('[AI] Clear history sync:', e.message);
     }
