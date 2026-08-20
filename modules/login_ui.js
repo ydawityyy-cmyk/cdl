@@ -89,7 +89,7 @@ export function renderLogin(onLogin) {
             <div class="field-group">
               <label for="login-password">Password</label>
               <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" />
-              <button type="button" id="pw-toggle" class="pw-toggle" aria-label="Toggle password visibility">👁</button>
+              <button type="button" id="pw-toggle" class="pw-toggle" aria-label="Toggle password visibility" onclick="window.togglePw(this)">👁</button>
             </div>
 
             <!-- Error -->
@@ -604,6 +604,7 @@ export function renderLogin(onLogin) {
   `;
 
   // ─── Password Toggle ────────────────────────────────────────
+  document.getElementById("pw-toggle")?.addEventListener("click", function() { window.togglePw(this); });
   window.togglePw = (btn) => {
     const input = document.getElementById("login-password");
     if (input.type === "password") {
