@@ -81,9 +81,23 @@ async function fetchLiveContext(user) {
 }
 
 function generateDeepReasoning(prompt, user, ctx, history = []) {
-  const q = prompt.trim().toLowerCase();
+  // Normalize input - handle typos, punctuation, extra spaces
+  const rawQ = prompt.trim();
+  const q = rawQ.toLowerCase()
+    .replace(/[^a-z0-9\s@\.]/g, ' ')  // strip punctuation except @ and .
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Smart intent scoring — each intent has weighted keyword matches
+  function score(keywords) {
+    let s = 0;
+    for (const kw of keywords) {
+      if (q.includes(kw)) s += kw.length; // longer match = stronger signal
+    }
+    return s;
+  }
+
   const userName = user.name ? user.name.split(' ')[0] : 'there';
-  const roleName = user.role.replace(/_/g, ' ');
   const stock = ctx.stock || [];
   const sites = ctx.sites || [];
   const users = ctx.users || [];
@@ -93,139 +107,164 @@ function generateDeepReasoning(prompt, user, ctx, history = []) {
     return s ? s.name : `Site ${id}`;
   };
 
-  // 1. PASSWORD / LOGIN / CREDENTIALS QUERY
-  if (q.includes('password') || q.includes('login') || q.includes('credential') || q.includes('admin pass') || q.includes('sign in')) {
-    return `### 🔐 CDL System Access & Credentials\n\n• **Default System Password**: All standard seeded system accounts (Admin, PMs, Engineers, Supervisors, Storekeepers) are configured with default password: \`canaan123\`\n• **Admin Account**: \`admin@cdl.co.ke\`\n• **Newly Created Users**: When an administrator provisions a user via **Manage Users**, their GoTrue auth credentials are created automatically with password \`canaan123\`\n• **Password Management**: Administrators can reset or disable any user profile directly from the **Manage Users** dashboard.`;
+  // ── INTENT SCORES ──────────────────────────────────────────────
+  const credScore   = score(['password','credential','crediantial','cred','login','access','sign in','username','account info','log in','passw']);
+  const userScore   = score(['user','team','personnel','staff','employee','who are','roster','member','how many user','list user','all user']);
+  const expiryScore = score(['expir','shelf','perish','spoil','old stock','aging','due date','expire','expiry','best before','use by']);
+  const lowStockScore = score(['low stock','shortage','running low','reorder','depleted','out of stock','critical stock','less than','minimum']);
+  const sitesScore  = score(['site','project','location','all project','show site','list site','our project','how many site','active project']);
+  const transferScore = score(['transfer','transit','dispatch','move stock','inter.site']);
+  const requestScore  = score(['request','approval','mrn','requisition','pending request','material request','order']);
+  const greetScore    = score(['hello','hi ','hey','status','help me','how are','what can','good morning','good afternoon']);
+  const technicalScore = score(['concrete','mix ratio','curing','slump','grade','rebar','column','slab','beam','foundation','cement ratio','water cement']);
+  const costScore = score(['cost','price','value','worth','budget','ksh','kes','money','spend','spent','expensive']);
+
+  // ── SPECIFIC USER LOOKUP (by name or email in query) ──────────
+  const mentionedUser = users.find(u => {
+    if (!u.name && !u.email) return false;
+    const nameWords = (u.name || '').toLowerCase().split(' ').filter(w => w.length > 2);
+    const email = (u.email || '').toLowerCase();
+    return nameWords.some(w => q.includes(w)) || (email && q.includes(email.split('@')[0]));
+  });
+
+  if (mentionedUser && (credScore > 0 || q.includes('info') || q.includes('detail') || q.includes('for ') || q.includes('about'))) {
+    const u = mentionedUser;
+    const siteList = Array.isArray(u.site_ids) && u.site_ids.length > 0
+      ? u.site_ids.map(id => siteName(id)).join(', ')
+      : 'All Sites';
+    return `Here are the details for **${u.name}**:\n\n• **Email / Username**: \`${u.email}\`\n• **Role**: ${u.role.replace(/_/g, ' ')}\n• **Position**: ${u.position || '—'}\n• **Sites**: ${siteList}\n• **Status**: ${u.is_active ? '✅ Active' : '⏸️ Disabled'}\n\n🔐 **Default Login Password**: \`canaan123\`\n*(Administrators can reset the password via **Manage Users → Edit User**)*`;
   }
 
-  // 2. USERS / TEAM / PERSONNEL / ROLES QUERY
-  if (q.includes('user') || q.includes('team') || q.includes('personnel') || q.includes('staff') || q.includes('employee') || q.includes('who are') || q.includes('how many user') || q.includes('list user')) {
+  // ── SPECIFIC MATERIAL SEARCH (do this BEFORE site match to avoid "site" word clashing) ──
+  const materialKeywords = q.split(' ').filter(w => w.length > 2 && !['what','where','how','show','tell','about','many','much','the','and','for','are','are','have','item','give','need','site','project','stock','all','our','does','that','this','with','from','which','they'].includes(w));
+  const matchedMaterials = materialKeywords.length > 0 ? stock.filter(item => {
+    const name = (item.material_name || '').toLowerCase();
+    const cat = (item.category || '').toLowerCase();
+    return materialKeywords.some(k => name.includes(k) || cat.includes(k));
+  }) : [];
+
+  // ── SPECIFIC SITE LOOKUP ───────────────────────────────────────
+  const matchedSite = sites.find(s => {
+    const sn = s.name.toLowerCase();
+    const parts = sn.split(' ').filter(w => w.length > 3);
+    return parts.some(p => q.includes(p));
+  });
+
+  // ── INTENT ROUTING (by highest score) ─────────────────────────
+  const maxScore = Math.max(credScore, userScore, expiryScore, lowStockScore, sitesScore, transferScore, requestScore, greetScore, technicalScore, costScore);
+
+  // ── CREDENTIALS / PASSWORD ────────────────────────────────────
+  if (credScore >= 4 && credScore === maxScore) {
+    return `### 🔐 CDL System Access & Credentials\n\n• **Default System Password** (all accounts): \`canaan123\`\n• **Admin Email**: \`admin@canaan.co.ke\`\n• **Data Holder**: \`dh@canaan.co.ke\` / \`canaan123\`\n• **CEO**: \`ceo@canaan.co.ke\` / \`canaan123\`\n• **Owner**: \`owner@canaan.co.ke\` / \`canaan123\`\n\n💡 All user accounts provisioned through **Manage Users** are assigned the default password \`canaan123\` automatically.\n\nAdmins can reset or disable any account from the **Manage Users** dashboard.`;
+  }
+
+  // ── USERS / TEAM ──────────────────────────────────────────────
+  if (userScore > 3 && (userScore >= credScore || credScore < 4)) {
     const roleCounts = {};
-    users.forEach(u => {
-      roleCounts[u.role] = (roleCounts[u.role] || 0) + 1;
-    });
-
-    const breakdown = Object.entries(roleCounts)
-      .map(([r, c]) => `• **${r.replace(/_/g, ' ').toUpperCase()}**: ${c} user(s)`)
-      .join('\n');
-
-    const sampleUsers = users.slice(0, 8).map(u => `• **${u.name}** (${u.email}) — ${u.role.replace(/_/g, ' ')}`).join('\n');
-
-    return `We currently have **${ctx.activeUserCount || users.length} active users** registered across CDL Site Management:\n\n### 👥 Role Distribution:\n${breakdown}\n\n### 📋 Sample Active Accounts:\n${sampleUsers}\n\n*(You can view, edit, or provision additional team members in the **Manage Users** module).* `;
+    users.forEach(u => { roleCounts[u.role] = (roleCounts[u.role] || 0) + 1; });
+    const breakdown = Object.entries(roleCounts).sort((a,b) => b[1]-a[1])
+      .map(([r, c]) => `• **${r.replace(/_/g,' ').toUpperCase()}**: ${c}`).join('\n');
+    const sample = users.slice(0, 6).map(u => `• **${u.name}** (${u.email}) — ${u.role.replace(/_/g,' ')}`).join('\n');
+    return `We have **${ctx.activeUserCount || users.length} active team members** across all CDL sites:\n\n### 👥 By Role:\n${breakdown}\n\n### Sample Accounts:\n${sample}\n\n*(Full list in **Manage Users**)*`;
   }
 
-  // 3. EXPIRATION & SHELF-LIFE QUERY
-  if (q.includes('expir') || q.includes('shelf') || q.includes('perish') || q.includes('spoil') || q.includes('rot') || q.includes('old stock') || q.includes('aging') || q.includes('due date')) {
+  // ── EXPIRING STOCK ────────────────────────────────────────────
+  if (expiryScore > 3) {
     const today = new Date();
-    const itemsWithExpiry = stock.filter(item => item.expiry_date);
-    
-    const expiringSoon = [];
-    itemsWithExpiry.forEach(item => {
-      const expDate = new Date(item.expiry_date);
-      const diffDays = Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      if (diffDays <= 45) {
-        expiringSoon.push({ ...item, diffDays });
-      }
-    });
+    const expiring = stock
+      .filter(i => i.expiry_date)
+      .map(i => ({ ...i, daysLeft: Math.ceil((new Date(i.expiry_date) - today) / 86400000) }))
+      .filter(i => i.daysLeft <= 60)
+      .sort((a,b) => a.daysLeft - b.daysLeft);
 
-    if (expiringSoon.length > 0) {
-      const list = expiringSoon.map(i => {
-        const statusText = i.diffDays < 0 
-          ? `⚠️ **Expired ${Math.abs(i.diffDays)} days ago**` 
-          : i.diffDays <= 7 
-          ? `⏳ **Expiring in ${i.diffDays} days** (on ${i.expiry_date})` 
-          : `📅 Expiring in ${i.diffDays} days (${i.expiry_date})`;
-        
-        return `• **${i.material_name}**: ${i.quantity} ${i.unit} at **${siteName(i.site_id)}**\n  ${statusText}`;
-      }).join('\n\n');
+    if (expiring.length === 0) return `All good! No materials are within the critical 60-day expiration window across any of our ${ctx.activeSiteCount} sites.\n\n*(PPR pipes, steel rebar, timber, and aggregates are non-perishable — they don't expire.)*`;
 
-      return `Yes, I checked our live inventory and found **${expiringSoon.length} item(s)** reaching expiration soon:\n\n${list}\n\n💡 **Recommendation:** We should prioritize using this batch for ongoing site castings immediately or arrange an inter-site transfer to high-usage projects so it doesn't go to waste.\n\n*(Note: Durable goods like PPR pipes, rebar steel, and aggregates do not have expiration dates).* `;
-    }
+    const list = expiring.slice(0, 8).map(i => {
+      const flag = i.daysLeft < 0 ? `❌ Expired ${Math.abs(i.daysLeft)}d ago`
+        : i.daysLeft <= 7 ? `🔴 CRITICAL — expires in ${i.daysLeft} days (${i.expiry_date})`
+        : i.daysLeft <= 30 ? `🟠 Expiring in ${i.daysLeft} days (${i.expiry_date})`
+        : `🟡 Expiring in ${i.daysLeft} days (${i.expiry_date})`;
+      return `• **${i.material_name}** — ${i.quantity} ${i.unit || 'units'} @ **${siteName(i.site_id)}**\n  ${flag}`;
+    }).join('\n\n');
 
-    return `I ran a check across all 12 active sites, and currently **no materials are within the 45-day critical expiration window**.\n\nAs a reminder:\n• **Cement & Tile Adhesives**: Have a 90-day shelf life from production.\n• **Chemicals & Paints**: Typically 6–12 months.\n• **Non-perishables** (PPR pipes, steel, timber, aggregates): Have no expiry date.`;
+    return `I found **${expiring.length} item(s)** approaching or past their expiry date:\n\n${list}\n\n💡 Recommend using or transferring urgent batches to high-consumption sites immediately.`;
   }
 
-  // 4. SPECIFIC SITE LOOKUP
-  const matchedSite = sites.find(s => q.includes(s.name.toLowerCase()) || (s.name.length > 4 && q.includes(s.name.split(' ')[0].toLowerCase())));
+  // ── LOW STOCK / SHORTAGE ──────────────────────────────────────
+  if (lowStockScore > 3) {
+    const low = stock.filter(i => parseFloat(i.quantity) > 0 && parseFloat(i.quantity) <= 15);
+    if (!low.length) return `Stock levels look healthy across all sites — no critical shortages detected right now.`;
+    const list = low.slice(0, 8).map(i => `• **${i.material_name}**: only **${i.quantity} ${i.unit || 'units'}** left @ ${siteName(i.site_id)}`).join('\n');
+    return `⚠️ **${low.length} items** are running low across our sites:\n\n${list}\n\nWould you like to raise a material requisition or arrange a transfer from the Central Store?`;
+  }
+
+  // ── SITE-SPECIFIC LOOKUP ──────────────────────────────────────
   if (matchedSite) {
-    const siteStock = stock.filter(item => item.site_id === matchedSite.id);
+    const siteStock = stock.filter(i => i.site_id === matchedSite.id);
     const siteReqs = (ctx.pendingReqs || []).filter(r => r.site_id === matchedSite.id);
-    
-    let stockList = 'No active materials recorded for this site yet.';
-    if (siteStock.length) {
-      stockList = siteStock.slice(0, 6).map(i => `• **${i.material_name}**: ${i.quantity} ${i.unit || 'units'}`).join('\n');
-      if (siteStock.length > 6) stockList += `\n• *...and ${siteStock.length - 6} more items*`;
-    }
-
-    return `Here is the latest snapshot for **${matchedSite.name}**:\n\n• **Type**: ${matchedSite.type.toUpperCase()}\n• **Status**: ${matchedSite.is_active ? '✅ Active' : '⏸️ Inactive'}\n• **Pending Requests**: ${siteReqs.length} material requisition(s)\n• **Total Inventory Lines**: ${siteStock.length} items\n\n**Key Stock on Site:**\n${stockList}`;
+    const stockList = siteStock.length
+      ? siteStock.slice(0, 8).map(i => `• **${i.material_name}**: ${i.quantity} ${i.unit || 'units'}`).join('\n') + (siteStock.length > 8 ? `\n• *...and ${siteStock.length - 8} more*` : '')
+      : 'No active materials recorded yet.';
+    return `### 📍 ${matchedSite.name}\n\n• **Type**: ${matchedSite.type}\n• **Status**: ${matchedSite.is_active ? '✅ Active' : '⏸️ Inactive'}\n• **Open Requests**: ${siteReqs.length}\n• **Inventory Lines**: ${siteStock.length}\n\n**Stock on Site:**\n${stockList}`;
   }
 
-  // 4b. LIST ALL SITES (catch "show all sites", "list sites", "all projects" early)
-  if ((q.includes('show') || q.includes('list') || q.includes('all')) && (q.includes('site') || q.includes('project') || q.includes('location'))) {
-    const list = sites.map(s => `• **${s.name}** (${s.type})`).join('\n');
-    return `CDL is currently operating **${ctx.activeSiteCount || sites.length} active projects** in Nairobi:\n\n${list}\n\nAll sites are connected to the central inventory and requisition network.`;
-  }
-
-  // 5. LOW STOCK & REORDER INQUIRIES
-  if (q.includes('low stock') || q.includes('shortage') || q.includes('running low') || q.includes('reorder') || q.includes('depleted') || q.includes('out of stock')) {
-    const lowStock = stock.filter(item => {
-      const qty = parseFloat(item.quantity) || 0;
-      return qty > 0 && qty <= 15;
+  // ── COST / VALUE ───────────────────────────────────────────────
+  if (costScore > 3) {
+    const totalValue = stock.reduce((s, i) => s + ((parseFloat(i.quantity) || 0) * (parseFloat(i.unit_price) || 0)), 0);
+    const bySite = {};
+    stock.forEach(i => {
+      const sn = siteName(i.site_id);
+      bySite[sn] = (bySite[sn] || 0) + ((parseFloat(i.quantity) || 0) * (parseFloat(i.unit_price) || 0));
     });
-
-    if (lowStock.length > 0) {
-      const list = lowStock.slice(0, 8).map(i => `• **${i.material_name}**: only ${i.quantity} ${i.unit} left at **${siteName(i.site_id)}**`).join('\n');
-      return `Here are the **${lowStock.length} items** running low across our sites:\n\n${list}\n\nWould you like to raise a material requisition or transfer surplus from the Central Store?`;
-    }
-
-    return `Good news — all inventory balances across our 12 active sites currently look healthy and above minimum safety thresholds.`;
+    const breakdown = Object.entries(bySite).sort((a,b) => b[1]-a[1]).slice(0, 5)
+      .map(([s, v]) => `• **${s}**: KES ${v.toLocaleString()}`).join('\n');
+    return `Our total live inventory value across all sites is **KES ${totalValue.toLocaleString()}**\n\n### Top Sites by Value:\n${breakdown}`;
   }
 
-  // 6. SPECIFIC MATERIAL SEARCH (Cement, Steel, Paint, Pipes, PPR, Sand, Timber, Rebar, etc.)
-  const keywords = q.split(/\s+/).filter(w => w.length > 2 && !['what', 'where', 'how', 'show', 'tell', 'about', 'many', 'much', 'the', 'and', 'for', 'are', 'is', 'have', 'item'].includes(w));
-  if (keywords.length > 0) {
-    const matched = stock.filter(item => {
-      const name = (item.material_name || '').toLowerCase();
-      const cat = (item.category || '').toLowerCase();
-      return keywords.some(k => name.includes(k) || cat.includes(k));
-    });
-
-    if (matched.length > 0) {
-      const list = matched.slice(0, 8).map(m => `• **${m.material_name}**: **${m.quantity} ${m.unit || 'units'}** at **${siteName(m.site_id)}** (${m.category || 'General'})`).join('\n');
-      return `I found **${matched.length} stock record(s)** matching your search:\n\n${list}\n\nLet me know if you need to transfer any of these or create a requisition!`;
-    }
+  // ── ALL SITES ─────────────────────────────────────────────────
+  if (sitesScore > 3 && matchedMaterials.length === 0) {
+    const list = sites.map(s => `• **${s.name}** — ${s.type} (${s.is_active ? 'Active' : 'Inactive'})`).join('\n');
+    return `CDL is managing **${ctx.activeSiteCount || sites.length} active projects** across Nairobi:\n\n${list}\n\nAll sites share the central inventory and requisition network.`;
   }
 
-  // 7. PENDING MATERIAL REQUESTS
-  if (q.includes('request') || q.includes('approval') || q.includes('mrn') || q.includes('requisition')) {
-    const pending = ctx.pendingReqs || [];
-    return `We currently have **${pending.length} pending material request(s)** waiting for Project Manager review across our sites.\n\nYou can review, approve, or issue them directly in the **Requests** tab.`;
+  // ── TRANSFERS ─────────────────────────────────────────────────
+  if (transferScore > 3) {
+    const t = ctx.pendingTransfers || [];
+    return `There are **${t.length} inter-site transfer(s)** currently in transit or awaiting confirmation.\n\nAll transfers go through central dispatch at GRS/Mlolongo. You can track and approve them in the **Transfers** module.`;
   }
 
-  // 8. TRANSFERS & DISPATCH
-  if (q.includes('transfer') || q.includes('transit') || q.includes('dispatch')) {
-    const transfers = ctx.pendingTransfers || [];
-    return `There are currently **${transfers.length} inter-site transfer(s)** in transit or pending confirmation between sites.\n\nCentral Store (GRS/Mlolongo) is operating normally as our main dispatch hub.`;
+  // ── MATERIAL REQUESTS ─────────────────────────────────────────
+  if (requestScore > 3) {
+    const r = ctx.pendingReqs || [];
+    return `We have **${r.length} pending material request(s)** awaiting PM review.\n\nYou can review, approve, or issue them from the **Requests** tab.`;
   }
 
-  // 9. SITES LISTING
-  if (q.includes('site') || q.includes('project') || q.includes('location')) {
-    const list = sites.slice(0, 12).map(s => `• **${s.name}** (${s.type})`).join('\n');
-    return `CDL is currently operating **${ctx.activeSiteCount || sites.length} active projects** in Nairobi:\n\n${list}\n\nAll sites are connected to the central inventory and requisition network.`;
+  // ── TECHNICAL GUIDANCE ────────────────────────────────────────
+  if (technicalScore > 3) {
+    return `### 🏗️ CDL Technical Standards\n\n**Concrete Mix Ratios:**\n• Class 15 (1:3:6) — Blinding, non-structural\n• Class 20 (1:2:4) — Standard columns, beams, slabs\n• Class 25/30 (1:1.5:3) — Heavy structural, water-retaining\n\n**Curing:** Minimum 7–14 days wet curing (burlap/ponding)\n**Slump Test:** 50–75mm for pumpable structural concrete`;
   }
 
-  // 10. TECHNICAL CONSTRUCTION GUIDANCE (Mix ratios, Curing, Slump, Scaffolding)
-  if (q.includes('concrete') || q.includes('mix') || q.includes('curing') || q.includes('ratio') || q.includes('grade') || q.includes('slump')) {
-    return `### 🏗️ Technical Construction Standards (CDL / KEBS)\n\n• **Standard Concrete Mix Ratios**:\n  - **Class 15 (1:3:6)**: Blinding, non-structural mass concrete\n  - **Class 20 (1:2:4)**: Standard columns, beams, suspended slabs\n  - **Class 25/30 (1:1.5:3)**: Heavy structural elements, retaining walls, water-retaining structures\n• **Curing Protocol**: Minimum 7 to 14 days continuous wet curing with burlap/ponding to achieve 70%+ characteristic compressive strength.\n• **Slump Test Standard**: 50mm–75mm for standard pumpable structural concrete.`;
+  // ── GREETING / STATUS ─────────────────────────────────────────
+  if (greetScore > 2) {
+    return `Hi ${userName}! I'm your CDL Site & Inventory Advisor, connected live to all ${ctx.activeSiteCount || 12} project sites.\n\nCurrently tracking **${ctx.totalStockItems || 0} stock items** across **${ctx.activeSiteCount || 12} sites** with **${ctx.pendingReqCount || 0} pending requests**.\n\nYou can ask me about expiring materials, stock levels, user credentials, site inventories, transfers, costs, or any construction technical question!`;
   }
 
-  // 11. GREETING & GENERAL
-  if (q.includes('hello') || q.includes('hi') || q.includes('hey') || q.includes('status') || q.includes('help')) {
-    return `Hi ${userName}! I'm your CDL Site & Inventory Advisor.\n\nEverything is running smoothly across our **${ctx.activeSiteCount || 12} sites** with **${ctx.totalStockItems || 0} tracked stock items**.\n\nHow can I help you today? You can ask me about:\n• Expiring materials or shelf-life checks\n• Stock levels for specific materials (cement, steel, PPR pipes)\n• Project site inventories (Aura Peponi, Miotoni, etc.)\n• Pending requests or transfers\n• Team & user management inquiries`;
+  // ── MATERIAL KEYWORD SEARCH ───────────────────────────────────
+  if (matchedMaterials.length > 0) {
+    const list = matchedMaterials.slice(0, 8).map(m =>
+      `• **${m.material_name}**: **${m.quantity} ${m.unit || 'units'}** @ **${siteName(m.site_id)}** (${m.category || 'General'})`
+    ).join('\n');
+    return `I found **${matchedMaterials.length} matching record(s)** in our live inventory:\n\n${list}${matchedMaterials.length > 8 ? `\n\n*...and ${matchedMaterials.length - 8} more records*` : ''}\n\nLet me know if you need to requisition or transfer any of these!`;
   }
 
-  // 12. NATURAL INTELLIGENT DEFAULT
-  return `I checked our live records regarding *"'${prompt}'"*.\n\nCurrently managing **${ctx.activeSiteCount || 12} active sites**, **${ctx.activeUserCount || 24} personnel**, and **${ctx.totalStockItems || 0} material records**.\n\nYou can ask me directly for:\n• *"How many users do we have?"*\n• *"What item is going to expire?"*\n• *"What is the stock of cement at Aura Peponi?"*\n• *"Show all pending requests"*\n• *"What are the default login credentials?"*`;
+  // ── SMART DEFAULT — try to infer intent from question words ───
+  const isQuestion = q.includes('what') || q.includes('how') || q.includes('who') || q.includes('where') || q.includes('when') || q.includes('which') || q.includes('is there') || q.includes('do we') || q.includes('can i');
+  if (isQuestion) {
+    return `I'm not sure I caught that exactly — I'm connected live to all **${ctx.activeSiteCount || 12} CDL sites** and **${ctx.totalStockItems || 0} stock records**.\n\nTry asking me:\n• *"What item is going to expire?"*\n• *"How many users do we have?"*\n• *"What is the stock at Aura Peponi?"*\n• *"Show me low stock items"*\n• *"What are the credentials for [name]?"*\n• *"What is the total inventory value?"*`;
+  }
+
+  // Last resort — at least show live context
+  return `I checked our live system — we're currently managing **${ctx.activeSiteCount || 12} sites**, **${ctx.activeUserCount || 0} personnel**, and **${ctx.totalStockItems || 0} material records**.\n\nCould you rephrase? I can help with inventory, expiring items, user credentials, transfers, costs, and more.`;
 }
 
 exports.handler = async (event) => {
