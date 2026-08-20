@@ -22,4 +22,5 @@ test-results/
 e2e-failure-screenshot.png
 
 # Local Netlify folder
-.netlify
+.netlify/*
+!.netlify/functions/
