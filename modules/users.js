@@ -2,9 +2,9 @@
 import { supabase, SITES } from "../config.js";
 import { ROLES, SITE_MANAGERS } from "./roles.js";
 import { logAudit } from "./audit_core.js";
-import { showToast, showModal, closeModal } from "../app.js";
+import { showToast, showModal, closeModal, syncLiveSites } from "../app.js";
 
-const ROLE_RANK = { company_owner: 10, admin: 9, ceo: 8, asset_manager: 7, finance: 6, office_manager: 5, store_manager: 5, site_overseer: 4, project_manager: 4, procurement_officer: 3, transfer_officer: 3, data_holder: 3, engineer: 2, storekeeper_local: 1, storekeeper_import: 1, storekeeper_scaffolding: 1 };
+const ROLE_RANK = { company_owner: 10, admin: 9, ceo: 8, head_of_projects: 8, asset_manager: 7, finance: 6, office_manager: 5, store_manager: 5, site_overseer: 4, project_manager: 4, procurement_officer: 3, transfer_officer: 3, data_holder: 3, supervisor: 2, engineer: 2, storekeeper_local: 1, storekeeper_import: 1, storekeeper_scaffolding: 1 };
 
 function canManageUsers(user) { return ["admin", "company_owner", "ceo", "asset_manager"].includes(user.role); }
 function canManageSites(user) { return SITE_MANAGERS.includes(user.role); }
@@ -19,6 +19,7 @@ export async function renderUsers(container, user) {
   if (canManageUsers(user)) tabs.push({ key: "users", label: "👥 Users" });
   if (canManageSites(user)) tabs.push({ key: "sites", label: "🏗 Sites" });
   if (["admin", "company_owner"].includes(user.role)) tabs.push({ key: "roles", label: "🔐 Role Manager" });
+  if (["admin", "company_owner", "ceo", "asset_manager"].includes(user.role)) tabs.push({ key: "departments", label: "🏭 Departments" });
 
   container.innerHTML = `
     <div style="margin-bottom:24px;">
@@ -42,6 +43,7 @@ export async function renderUsers(container, user) {
     });
     if (key === "users") loadUsersPanel(user);
     else if (key === "sites") loadSitesPanel(user);
+    else if (key === "departments") loadDepartmentsPanel(user);
     else loadRolesPanel(user);
   };
 
@@ -83,7 +85,10 @@ async function fetchUsers(currentUser) {
               const rank = ROLE_RANK[u.role] || 0;
               const myRank = ROLE_RANK[currentUser.role] || 0;
               const canEdit = myRank >= rank || currentUser.role === "admin";
-              const siteNames = (u.site_ids || []).map(id => SITES.find(s => s.id === id)?.name || `#${id}`).join(", ") || "All";
+              const isGlobal = ['admin', 'company_owner', 'ceo', 'asset_manager', 'finance', 'office_manager', 'site_overseer'].includes(u.role);
+  const siteNames = (u.site_ids && u.site_ids.length > 0)
+    ? u.site_ids.map(id => SITES.find(s => s.id === Number(id))?.name || `#${id}`).join(", ")
+    : (isGlobal ? "All Sites" : "Unassigned");
               return `
                 <tr style="border-bottom:1px solid rgba(30,35,48,0.5);">
                   <td style="padding:10px 8px;font-weight:500;color:var(--text-100);">${u.name}</td>
@@ -181,8 +186,16 @@ async function userFormModal(currentUser, editUser) {
     const role = document.getElementById("uf-role").value;
     const pw = document.getElementById("uf-pw").value;
     const sites = [...document.querySelectorAll(".uf-site:checked")].map(c => parseInt(c.value));
+    const customPerms = [...document.querySelectorAll(".uf-cap:checked")].map(c => c.value);
     if (!name || !email) { showToast("Name and email required", "error"); return; }
     if (!canCreateRole(currentUser, role)) { showToast("You cannot assign that role", "error"); return; }
+    
+    // Strict site validation for site-scoped roles
+    const isGlobalRole = ['admin', 'company_owner', 'ceo', 'asset_manager', 'finance', 'office_manager', 'site_overseer'].includes(role);
+    if (!isGlobalRole && sites.length === 0) {
+      showToast("Please assign at least one site for this role.", "error");
+      return;
+    }
     const position = document.getElementById("uf-position").value.trim();
     
     try {
@@ -202,7 +215,8 @@ async function userFormModal(currentUser, editUser) {
           role,
           password: pw || undefined,
           position,
-          site_ids: sites
+          site_ids: sites,
+          custom_perms: customPerms || []
         })
       });
 
@@ -254,7 +268,7 @@ async function loadSitesPanel(user) {
   const panel = document.getElementById("adm-panel");
   panel.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <span style="color:var(--text-300);font-size:13px;">Manage construction sites · ${SITES.length} total</span>
+      <span id="sites-count-label" style="color:var(--text-300);font-size:13px;">Manage construction sites</span>
       <button onclick="window._admOpenSiteForm(null)" class="btn btn-gold">+ Add Site</button>
     </div>
     <div id="sites-table"><div class="spinner" style="margin:60px auto;"></div></div>
@@ -269,6 +283,11 @@ async function fetchSites(user) {
   try {
     const { data: sites, error } = await supabase.from("sites").select("*").order("id", { ascending: true });
     if (error) throw error;
+    const countLabel = document.getElementById("sites-count-label");
+    if (countLabel) {
+      const activeCount = sites.filter(s => s.is_active !== false).length;
+      countLabel.textContent = `Manage construction sites · ${sites.length} total (${activeCount} active)`;
+    }
     el.innerHTML = `
       <div class="card" style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -349,6 +368,7 @@ function siteFormModal(user, site) {
       }
       closeModal();
       showToast(`Site ${sid ? "updated" : "created"}`, "success");
+      if (typeof syncLiveSites === "function") await syncLiveSites();
       fetchSites(user);
     } catch (e) {
       showToast(e.message, "error");
@@ -542,5 +562,127 @@ async function openCustomRoleModal(user) {
     } catch (err) {
       showToast(`Error creating role: ${err.message}`, "error");
     }
+  };
+}
+
+// ─── Departments Panel ───────────────────────────────────────────────────────
+async function loadDepartmentsPanel(user) {
+  const panel = document.getElementById("adm-panel");
+  if (!panel) return;
+  const canManage = ["admin","company_owner","ceo","asset_manager"].includes(user.role);
+  const btn = canManage ? '<button onclick="window._deptOpenNew()" class="btn btn-gold">+ New Department</button>' : "";
+  panel.innerHTML = [
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">',
+      '<div>',
+        '<div style="font-size:15px;font-weight:600;color:var(--text-100);">Trade Departments</div>',
+        '<p style="color:var(--text-300);font-size:12px;margin-top:2px;">Manage operational departments — Civil, Machines, Steel, Scaffolding, etc.</p>',
+      "</div>",
+      btn,
+    "</div>",
+    '<div id="dept-list"><div class="spinner" style="margin:40px auto;"></div></div>',
+  ].join("");
+  window._deptOpenNew = () => deptFormModal(user, null);
+  window._deptEdit = (id) => loadDeptForEdit(user, id);
+  window._deptToggle = async (id, isActive) => {
+    try {
+      const { error } = await supabase.from("departments").update({ is_active: !isActive }).eq("id", id);
+      if (error) throw error;
+      try { await logAudit({ action: isActive ? "department_deactivated" : "department_activated", module: "departments", record_id: id, reason: "Department " + (isActive ? "deactivated" : "activated") }); } catch(_) {}
+      showToast("Department " + (isActive ? "deactivated" : "activated"), "success");
+      loadDepartmentsPanel(user);
+    } catch (e) { showToast(e.message, "error"); }
+  };
+  await fetchDepartments();
+}
+
+async function fetchDepartments() {
+  const el = document.getElementById("dept-list");
+  if (!el) return;
+  try {
+    const { data, error } = await supabase
+      .from("departments")
+      .select("*")
+      .order("name", { ascending: true });
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      el.innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--text-300);">' +
+        '<div style="font-size:32px;margin-bottom:12px;">🏭</div>' +
+        '<div style="font-size:14px;font-weight:600;color:var(--text-200);">No departments yet</div>' +
+        '<p style="font-size:12px;margin-top:4px;">Click &quot;+ New Department&quot; to add one.</p></div>';
+      return;
+    }
+    const rows = data.map(d => {
+      const active = d.is_active !== false;
+      return "<tr style='border-bottom:1px solid rgba(30,35,48,0.5);'>" +
+        "<td style='padding:10px 8px;font-weight:600;color:var(--text-100);'>" + d.name + "</td>" +
+        "<td style='padding:10px 8px;font-size:11px;font-family:var(--font-mono);color:var(--gold);'>" + (d.code || "—") + "</td>" +
+        "<td style='padding:10px 8px;color:var(--text-200);font-size:12px;max-width:260px;'>" + (d.description || "—") + "</td>" +
+        "<td style='padding:10px 8px;'><span style='padding:2px 8px;border-radius:12px;font-size:11px;background:" +
+          (active ? "rgba(46,160,67,0.15)" : "rgba(231,76,60,0.15)") + ";color:" + (active ? "var(--green)" : "var(--red)") + ";'>" +
+          (active ? "Active" : "Inactive") + "</span></td>" +
+        "<td style='padding:10px 8px;display:flex;gap:6px;'>" +
+          "<button onclick=\"window._deptEdit('" + d.id + "')\" style='background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--text-200);cursor:pointer;font-size:12px;'>Edit</button>" +
+          "<button onclick=\"window._deptToggle('" + d.id + "'," + active + ")\" style='background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:" + (active ? "var(--red)" : "var(--green)") + ";'>" + (active ? "Deactivate" : "Activate") + "</button>" +
+        "</td></tr>";
+    }).join("");
+    el.innerHTML = '<div class="card" style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+      "<thead><tr style='border-bottom:1px solid var(--border);'>" +
+        ["Department","Code","Description","Status","Actions"].map(h => "<th style='text-align:left;padding:10px 8px;color:var(--text-400);font-weight:500;'>" + h + "</th>").join("") +
+      "</tr></thead><tbody>" + rows + "</tbody></table></div>";
+  } catch (e) {
+    el.innerHTML = "<p style='color:var(--red);'>Error: " + e.message + "</p>";
+  }
+}
+
+async function loadDeptForEdit(user, id) {
+  const { data, error } = await supabase.from("departments").select("*").eq("id", id).single();
+  if (error) { showToast(error.message, "error"); return; }
+  deptFormModal(user, data);
+}
+
+function deptFormModal(user, dept) {
+  const isEdit = !!dept;
+  const checked = (dept && dept.is_active === false) ? "" : "checked";
+  showModal(
+    "<h2 style='margin-bottom:20px;'>" + (isEdit ? "Edit" : "New") + " Department</h2>" +
+    "<div style='display:flex;flex-direction:column;gap:14px;'>" +
+      "<div><label style='color:var(--text-300);font-size:11px;text-transform:uppercase;letter-spacing:.5px;'>Department Name *</label>" +
+        "<input id='df-name' value='" + (dept ? dept.name.replace(/'/g,"&#39;") : "") + "' placeholder='e.g. Machines &amp; Heavy Plant' style='width:100%;margin-top:5px;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-100);'></div>" +
+      "<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;'>" +
+        "<div><label style='color:var(--text-300);font-size:11px;text-transform:uppercase;letter-spacing:.5px;'>Code (3-4 letters)</label>" +
+          "<input id='df-code' value='" + (dept?.code || "") + "' placeholder='e.g. MCH' maxlength='6' style='width:100%;margin-top:5px;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-100);font-family:var(--font-mono);'></div>" +
+        "<div style='display:flex;align-items:flex-end;padding-bottom:2px;'><label style='display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-200);'>" +
+          "<input type='checkbox' id='df-active' " + checked + " style='accent-color:var(--gold);width:16px;height:16px;'> Active</label></div>" +
+      "</div>" +
+      "<div><label style='color:var(--text-300);font-size:11px;text-transform:uppercase;letter-spacing:.5px;'>Description</label>" +
+        "<textarea id='df-desc' rows='2' style='width:100%;margin-top:5px;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-100);resize:vertical;'>" + (dept?.description || "") + "</textarea></div>" +
+      "<div style='display:flex;gap:10px;margin-top:4px;'>" +
+        "<button onclick=\"window._deptSave('" + (dept?.id || "") + "')\" class='btn btn-gold' style='flex:1;'>" + (isEdit ? "Save Changes" : "Create Department") + "</button>" +
+        "<button onclick='window._closeModal()' class='btn btn-ghost'>Cancel</button>" +
+      "</div>" +
+    "</div>"
+  );
+
+  window._deptSave = async (id) => {
+    const name = document.getElementById("df-name").value.trim();
+    const code = document.getElementById("df-code").value.trim().toUpperCase();
+    const description = document.getElementById("df-desc").value.trim();
+    const is_active = document.getElementById("df-active").checked;
+    if (!name) { showToast("Department name is required", "error"); return; }
+    try {
+      if (id) {
+        const { error } = await supabase.from("departments").update({ name, code, description, is_active }).eq("id", id);
+        if (error) throw error;
+        try { await logAudit({ action: "department_updated", module: "departments", record_id: id, reason: 'Department updated: "' + name + '"' }); } catch(_) {}
+        showToast("Department updated", "success");
+      } else {
+        const { error, data: newDept } = await supabase.from("departments").insert({ name, code, description, is_active: true }).select().single();
+        if (error) throw error;
+        try { await logAudit({ action: "department_created", module: "departments", record_id: (newDept && newDept.id) || name, reason: 'Department "' + name + '" (code: ' + code + ') created' }); } catch(_) {}
+        showToast("Department created: " + name, "success");
+      }
+      closeModal();
+      loadDepartmentsPanel(user);
+    } catch (e) { showToast("Error: " + e.message, "error"); }
   };
 }

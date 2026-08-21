@@ -9,15 +9,34 @@ import { checkAndQueueNewMaterial } from "./material_approvals.js";
 
 export async function renderRequests(container, user) {
   const role = ROLES[user.role] || {};
-  const canCreate = role.canCreateRequest === true;
-  const canApprove = role.canApproveRequests === true;
-  const canIssue = role.canIssueStock === true;
-  const siteFilter = role.siteScope === "assigned" ? (user.site_ids || []) : SITES.map(s => s.id);
+  const customPerms = user._customPerms || [];
+  const canCreate = role.canCreateRequest === true || customPerms.includes("requests:create") || customPerms.includes("requests:*");
+  const canApprove = role.canApproveRequests === true || customPerms.includes("requests:approve") || customPerms.includes("requests:*");
+  const canIssue = role.canIssueStock === true || customPerms.includes("requests:issue") || customPerms.includes("requests:*");
+  const isGlobalRole = ['admin', 'company_owner', 'ceo', 'asset_manager', 'finance', 'office_manager', 'site_overseer'].includes(user.role);
+  const siteFilter = (!isGlobalRole && Array.isArray(user.site_ids) && user.site_ids.length > 0)
+    ? user.site_ids
+    : SITES.map(s => s.id);
   container.innerHTML = `<div style="margin-bottom:24px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;"><div><h1 style="font-size:24px;font-weight:700;color:var(--text-100);">Material Requests</h1><p style="color:var(--text-200);font-size:13px;margin-top:4px;">Request, approve, issue, collect and return material</p></div>${canCreate?`<button class="btn btn-gold" onclick="window._reqOpenNew()">+ New Request</button>`:""}</div><div style="display:flex;gap:4px;margin-bottom:20px;flex-wrap:wrap;">${["Pending","PM Approved","Issued","Collected","Completed","Returned","Expired"].map((t,i)=>{const key=t.toLowerCase().replace(" ","_");return `<button onclick="window._reqLoad('${key}')" id="req-tab-${key}" style="padding:7px 16px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:500;${i===0?"background:var(--gold);color:var(--bg-900);":"background:var(--bg-600);color:var(--text-200);"}">${t}<span id="req-count-${key}" style="margin-left:4px;font-size:10px;opacity:0.7;"></span></button>`;}).join("")}</div><div id="req-list"><div class="spinner" style="margin:60px auto;"></div></div>`;
-  window._reqLoad = (status) => { ["pending","pm_approved","issued","collected","completed","returned","expired"].forEach(s=>{const b=document.getElementById(`req-tab-${s}`);if(b){b.style.background=s===status?"var(--gold)":"var(--bg-600)";b.style.color=s===status?"var(--bg-900)":"var(--text-200)";}}); fetchRequests(user,siteFilter,status,canApprove,canIssue); };
-  window._reqOpenNew = () => openRequestModal(user,siteFilter);
-  window._submitReq = () => submitRequest(user,siteFilter);
-  fetchRequests(user,siteFilter,"pending",canApprove,canIssue);
+  window._reqCurrentStatus = "pending";
+  window._reqLoad = (status) => {
+    window._reqCurrentStatus = status;
+    ["pending","pm_approved","issued","collected","completed","returned","expired"].forEach(s => {
+      const b = document.getElementById(`req-tab-${s}`);
+      if (b) {
+        b.style.background = s === status ? "var(--gold)" : "var(--bg-600)";
+        b.style.color = s === status ? "var(--bg-900)" : "var(--text-200)";
+      }
+    });
+    fetchRequests(user, siteFilter, status, canApprove, canIssue);
+  };
+  window._reqOpenNew = () => openRequestModal(user, siteFilter);
+  window._submitReq = () => submitRequest(user, siteFilter);
+  window._reqRefresh = () => fetchRequests(user, siteFilter, window._reqCurrentStatus || "pending", canApprove, canIssue);
+  
+  // Initial load
+  fetchRequests(user, siteFilter, "pending", canApprove, canIssue);
+  updateAllTabCounts(siteFilter);
 }
 
 async function fetchRequests(user,siteFilter,status,canApprove,canIssue) {
@@ -39,17 +58,42 @@ async function fetchRequests(user,siteFilter,status,canApprove,canIssue) {
       if (requesterIds.length) {
         const { data: users, error: userError } = await supabase
           .from('users')
-          .select('id, name')
+          .select('id, name, email, role')
           .in('id', requesterIds);
         const userMap = {};
-        (users || []).forEach(u => { userMap[u.id] = u.name; });
-        requests.forEach(r => { r.requester_name = userMap[r.requested_by] || "Unknown"; });
+        (users || []).forEach(u => {
+          userMap[u.id] = u.name || (u.email ? u.email.split('@')[0].replace(/\./g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : null);
+        });
+        requests.forEach(r => {
+          r.requester_name = userMap[r.requested_by] || (r.requested_by ? `User (${r.requested_by.slice(0, 8)})` : "Site Supervisor");
+        });
+      } else {
+        requests.forEach(r => {
+          r.requester_name = r.requester_name || "Site Supervisor";
+        });
       }
     }
-    const countEl=document.getElementById(`req-count-${status}`);if(countEl)countEl.textContent=requests.length?`(${requests.length})`:"";
-    list.innerHTML=requests.map(r=>{const urgencyColors={low:"var(--text-300)",normal:"var(--blue)",high:"var(--orange)",critical:"var(--red)"};const uc=urgencyColors[r.urgency]||"var(--text-300)";const isExpired=r.expiry_at&&new Date(r.expiry_at)<new Date()&&status==="issued";return `<div class="card" style="margin-bottom:12px;${isExpired?"border-left:3px solid var(--red);":""}"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;"><div style="flex:1;"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-size:14px;font-weight:600;color:var(--text-100);">${r.material_name}</span><span class="badge" style="background:${uc}20;color:${uc};font-size:10px;">${r.urgency}</span></div><div style="color:var(--text-200);font-size:12px;margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;"><span>📦 ${r.quantity} ${r.unit||""}</span><span>🏗 ${r.sites?.name||`#${r.site_id}`}</span>${r.requester_name?`<span>👤 ${r.requester_name}</span>`:""}${r.purpose?`<span>📝 ${r.purpose}</span>`:""}<span>📅 ${new Date(r.created_at).toLocaleDateString("en-KE")}</span></div>${r.return_reason?`<div style="color:var(--orange);font-size:12px;margin-top:4px;">↩ ${r.return_reason}</div>`:""}${isExpired?`<div style="color:var(--red);font-size:11px;font-weight:600;margin-top:4px;">⚠ EXPIRED</div>`:""}</div></div><div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">${canApprove&&status==="pending"?`<button onclick="window._reqUpdateStatus('${r.id}','pm_approved')" class="btn btn-gold btn-sm">✓ Approve</button><button onclick="window._reqUpdateStatus('${r.id}','pm_rejected')" class="btn btn-ghost btn-sm" style="color:var(--red);">✕ Reject</button>`:""}${canIssue&&status==="pm_approved"?`<button onclick="window._reqIssue('${r.id}')" class="btn btn-gold btn-sm">📤 Issue</button><button onclick="window._reqUpdateStatus('${r.id}','reserved')" class="btn btn-ghost btn-sm">📦 Reserve</button>`:""}${status==="issued"&&!isExpired?`<button onclick="window._reqUpdateStatus('${r.id}','collected')" class="btn btn-gold btn-sm">✓ Collected</button>`:""}${status==="collected"?`<button onclick="window._reqUpdateStatus('${r.id}','completed')" class="btn btn-gold btn-sm">✓ Complete</button><button onclick="window._reqOpenReturn('${r.id}','${r.material_name.replace(/'/g,"\\'")}',${r.quantity},'${r.unit||""}')" class="btn btn-ghost btn-sm" style="color:var(--orange);">↩ Return</button>`:""}</div></div>`;}).join("");
-    window._reqUpdateStatus=(id,newStatus)=>updateRequestStatus(id,newStatus,user);
-    window._reqIssue=(id)=>issueRequestFn(id,user);
+    const countEl = document.getElementById(`req-count-${status}`);
+    if (countEl) countEl.textContent = requests.length ? `(${requests.length})` : "(0)";
+
+    if (!requests || requests.length === 0) {
+      const label = status.replace(/_/g, " ").toUpperCase();
+      list.innerHTML = `
+        <div class="card" style="text-align:center;padding:48px 20px;color:var(--text-300);background:var(--bg-700);border:1px solid var(--border);border-radius:12px;margin-top:8px;">
+          <div style="font-size:36px;margin-bottom:12px;">📭</div>
+          <div style="font-size:15px;font-weight:600;color:var(--text-100);">No ${label} Requests</div>
+          <p style="font-size:13px;color:var(--text-300);margin-top:6px;max-width:400px;margin-left:auto;margin-right:auto;">
+            ${status === "pending" ? "You have no requests awaiting PM review. Click <strong>+ New Request</strong> above to raise materials." : "Check other lifecycle tabs above (e.g. PM Approved, Issued, Collected)."}
+          </p>
+        </div>`;
+      window._reqUpdateStatus = (id, newStatus) => updateRequestStatus(id, newStatus, user, siteFilter, canApprove, canIssue);
+      window._reqIssue = (id) => issueRequestFn(id, user, siteFilter, canApprove, canIssue);
+      return;
+    }
+
+    list.innerHTML = requests.map(r => {const urgencyColors={low:"var(--text-300)",normal:"var(--blue)",high:"var(--orange)",critical:"var(--red)"};const uc=urgencyColors[r.urgency]||"var(--text-300)";const isExpired=r.expiry_at&&new Date(r.expiry_at)<new Date()&&status==="issued";return `<div class="card" style="margin-bottom:12px;${isExpired?"border-left:3px solid var(--red);":""}"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;"><div style="flex:1;"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-size:14px;font-weight:600;color:var(--text-100);">${r.material_name}</span><span class="badge" style="background:${uc}20;color:${uc};font-size:10px;">${r.urgency}</span></div><div style="color:var(--text-200);font-size:12px;margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;"><span>📦 ${r.quantity} ${r.unit||""}</span><span>🏗 ${r.sites?.name||`#${r.site_id}`}</span>${r.requester_name?`<span>👤 ${r.requester_name}</span>`:""}${r.purpose?`<span>📝 ${r.purpose}</span>`:""}<span>📅 ${new Date(r.created_at).toLocaleDateString("en-KE")}</span></div>${r.return_reason?`<div style="color:var(--orange);font-size:12px;margin-top:4px;">↩ ${r.return_reason}</div>`:""}${isExpired?`<div style="color:var(--red);font-size:11px;font-weight:600;margin-top:4px;">⚠ EXPIRED</div>`:""}</div></div><div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">${canApprove&&status==="pending"?`<button onclick="window._reqUpdateStatus('${r.id}','pm_approved')" class="btn btn-gold btn-sm">✓ Approve</button><button onclick="window._reqUpdateStatus('${r.id}','pm_rejected')" class="btn btn-ghost btn-sm" style="color:var(--red);">✕ Reject</button>`:""}${canIssue&&status==="pm_approved"?`<button onclick="window._reqIssue('${r.id}')" class="btn btn-gold btn-sm">📤 Issue</button><button onclick="window._reqUpdateStatus('${r.id}','reserved')" class="btn btn-ghost btn-sm">📦 Reserve</button>`:""}${status==="issued"&&!isExpired?`<button onclick="window._reqUpdateStatus('${r.id}','collected')" class="btn btn-gold btn-sm">✓ Collected</button>`:""}${status==="collected"?`<button onclick="window._reqUpdateStatus('${r.id}','completed')" class="btn btn-gold btn-sm">✓ Complete</button><button onclick="window._reqOpenReturn('${r.id}','${r.material_name.replace(/'/g,"\\'")}',${r.quantity},'${r.unit||""}')" class="btn btn-ghost btn-sm" style="color:var(--orange);">↩ Return</button>`:""}</div></div>`;}).join("");
+    window._reqUpdateStatus=(id,newStatus)=>{updateRequestStatus(id,newStatus,user).then(()=>window._reqLoad(window._reqCurrentStatus||'pending'));};
+    window._reqIssue=(id)=>{issueRequestFn(id,user).then(()=>window._reqLoad(window._reqCurrentStatus||'pending'));};
   } catch(err){list.innerHTML=`<p style="color:var(--red);">Error: ${err.message}</p>`;}
 }
 
@@ -68,27 +112,45 @@ async function updateRequestStatus(id,status,user) {
       const req = reqs;
       if (req) {
         await sendNotif(req.requested_by, `Request Approved`, `${req.material_name} (${req.quantity} ${req.unit||""}) approved by PM`, "request_approved", id);
+        const siteNum = Number(req.site_id);
         const { data: sks } = await supabase
           .from('users')
-          .select('id')
-          .in('role', ['storekeeper_local', 'storekeeper_import', 'storekeeper_scaffolding'])
-          .contains('site_ids', [req.site_id])
+          .select('id, site_ids')
+          .in('role', ['storekeeper_local', 'storekeeper_import', 'storekeeper_imported', 'storekeeper_scaffolding', 'storekeeper'])
           .eq('is_active', true);
-        if (sks) {
-          for (const sk of sks) {
-            await sendNotif(sk.id, `📋 Material Request Approved`, `PM approved: ${req.material_name} × ${req.quantity} ${req.unit||""} — ready to issue`, "issue_ready", id);
+        if (sks && sks.length > 0) {
+          const matchingSKs = sks.filter(sk => !sk.site_ids || sk.site_ids.length === 0 || sk.site_ids.includes(siteNum) || sk.site_ids.includes(req.site_id));
+          const targetSKs = matchingSKs.length > 0 ? matchingSKs : sks;
+          for (const sk of targetSKs) {
+            await sendNotif(sk.id, `📋 Material Request Approved`, `PM approved: ${req.material_name} × ${req.quantity} ${req.unit||""} — ready to issue`, "issue_ready", id, "material_requests");
           }
         }
       }
     }
     if (status === "collected") {
       patch.collected_at = new Date().toISOString();
+      // notify_collected
+      try {
+        const { data: rr } = await supabase.from('material_requests').select('requested_by,material_name,quantity,unit,issued_by').eq('id', id).single();
+        if (rr?.issued_by) {
+          await sendNotif(rr.issued_by, '✅ Material Collected', `${rr.material_name} × ${rr.quantity} ${rr.unit || ''} collected by requester`, 'collected', id);
+        }
+      } catch (_) {}
     }
     const { error } = await supabase
       .from('material_requests')
       .update(patch)
       .eq('id', id);
     if (error) throw error;
+    if (status === "completed") {
+      // notify_completed
+      try {
+        const { data: rr } = await supabase.from('material_requests').select('requested_by,material_name').eq('id', id).single();
+        if (rr?.requested_by) {
+          await sendNotif(rr.requested_by, '🎉 Request Completed', `${rr.material_name} request has been marked complete.`, 'completed', id);
+        }
+      } catch (_) {}
+    }
     await logAudit({ action: `request_${status}`, module: "requests", record_id: id });
     showToast(`Request ${status.replace(/_/g, " ")}`, "success");
   } catch (err) {
@@ -98,14 +160,59 @@ async function updateRequestStatus(id,status,user) {
 
 async function issueRequestFn(id, user) {
   try {
-    const { data: reqs, error: reqError } = await supabase
+    const { data: req, error: reqError } = await supabase
       .from('material_requests')
       .select('site_id,material_name,quantity,unit,requested_by')
       .eq('id', id)
       .single();
     if (reqError) throw reqError;
-    const req = reqs;
-    const { error } = await supabase
+    if (!req) throw new Error("Request not found");
+
+    // 1. Find matching stock record on the same site
+    const siteNum = Number(req.site_id);
+    const { data: allStock, error: stockErr } = await supabase
+      .from('stock')
+      .select('*')
+      .eq('site_id', siteNum);
+    if (stockErr) throw stockErr;
+
+    // Intelligent match (exact -> trimmed lowercase -> substring)
+    const reqName = req.material_name.toLowerCase().trim();
+    let matched = (allStock || []).find(s => s.material_name.toLowerCase().trim() === reqName);
+    if (!matched) {
+      matched = (allStock || []).find(s => {
+        const sName = s.material_name.toLowerCase();
+        return sName.includes(reqName) || reqName.includes(sName);
+      });
+    }
+
+    if (!matched) {
+      showToast(`No stock record found for "${req.material_name}" on site. Cannot issue.`, "error");
+      return;
+    }
+
+    const available = Number(matched.quantity) || 0;
+    const needed = Number(req.quantity) || 0;
+
+    if (available < needed) {
+      showToast(`Insufficient stock: Available ${available} ${matched.unit || req.unit || ''}, Requested ${needed}. Issue blocked.`, "error");
+      return;
+    }
+
+    // 2. Decrement stock first (transactional safety)
+    const newQty = available - needed;
+    const { error: decError } = await supabase
+      .from('stock')
+      .update({
+        quantity: newQty,
+        last_updated: new Date().toISOString(),
+        updated_by: user.id
+      })
+      .eq('id', matched.id);
+    if (decError) throw new Error(`Failed to deduct stock: ${decError.message}`);
+
+    // 3. Mark request as issued
+    const { error: updError } = await supabase
       .from('material_requests')
       .update({
         status: "issued",
@@ -114,12 +221,14 @@ async function issueRequestFn(id, user) {
         expires_at: new Date(Date.now() + 24 * 3600000).toISOString()
       })
       .eq('id', id);
-    if (error) throw error;
+    if (updError) throw updError;
+
+    // 4. Notify requester
     if (req?.requested_by) {
       await sendNotif(req.requested_by, `📦 Material Ready for Collection`, `${req.material_name} (${req.quantity} ${req.unit||""}) has been issued. Collect before midnight.`, "material_issued", id);
     }
-    await logAudit({ action: "request_issued", module: "requests", record_id: id });
-    showToast("Request issued — expires in 24h", "success");
+    await logAudit({ action: "request_issued", module: "requests", record_id: id, before: { stock_before: available }, after: { stock_after: newQty, issued_qty: needed } });
+    showToast(`Issued ${needed} ${matched.unit||""} — stock updated to ${newQty}`, "success");
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
   }
@@ -183,6 +292,22 @@ async function submitRequest(user,siteFilter) {
       .single();
     if (error) throw error;
     await logAudit({ action: "request_created", module: "requests", record_id: saved.id });
+    // notify_pm_on_create
+    try {
+      const { data: pms } = await supabase
+        .from('users')
+        .select('id, site_ids')
+        .in('role', ['project_manager'])
+        .eq('is_active', true);
+      const siteIdNum = Number(siteId);
+      const pmTargets = (pms || []).filter(pm =>
+        !pm.site_ids || pm.site_ids.length === 0 ||
+        pm.site_ids.includes(siteIdNum) || pm.site_ids.includes(siteId)
+      );
+      for (const pm of pmTargets) {
+        await sendNotif(pm.id, '📋 New Material Request', `${material} × ${qty} ${unit || ''} — pending your approval on site`, 'request_pending', saved.id);
+      }
+    } catch (_) {}
     closeModal();
     showToast("Request submitted for PM approval", "success");
   } catch (err) {
@@ -190,7 +315,28 @@ async function submitRequest(user,siteFilter) {
   }
 }
 
-function openRequestModal(user, siteFilter) {
+async function openRequestModal(user, siteFilter) {
+  let depts = [];
+  try {
+    const { data: dbDepts } = await supabase.from('departments').select('*').eq('is_active', true).order('name');
+    if (dbDepts && dbDepts.length > 0) depts = dbDepts;
+  } catch (_) {}
+  if (!depts.length) {
+    depts = [
+      { name: "Civil & Masonry" },
+      { name: "Machines & Heavy Plant" },
+      { name: "Structural Steel" },
+      { name: "Timber & Formwork" },
+      { name: "Electrical & MEP" },
+      { name: "Plumbing & Drainage" },
+      { name: "Finishing & Tiles" },
+      { name: "Paints & Coatings" },
+      { name: "Waterproofing" },
+      { name: "Scaffolding" },
+      { name: "Safety & PPE" },
+      { name: "Tools & Hardware" }
+    ];
+  }
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
   showModal(`
     <div style="max-height:82vh;overflow-y:auto;padding-right:4px;">
@@ -232,15 +378,7 @@ function openRequestModal(user, siteFilter) {
             <div>
               <label style="display:block;font-size:11px;color:var(--text-300);margin-bottom:4px;">Trade / Department <span style="color:#ef4444;">*</span></label>
               <select id="rq-department" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-100);font-size:13px;">
-                <option value="Civil & Concrete">Civil & Concrete Works</option>
-                <option value="Structural Steel">Structural Steel & Rebar</option>
-                <option value="Masonry & Walling">Masonry & Walling</option>
-                <option value="Electrical">Electrical Installation</option>
-                <option value="Plumbing & Drainage">Plumbing & Drainage</option>
-                <option value="Carpentry & Formwork">Carpentry & Formwork</option>
-                <option value="Plaster & Finishes">Plaster, Screed & Tiling</option>
-                <option value="Painting & Waterproofing">Painting & Waterproofing</option>
-                <option value="Site Safety & Logistics">Site Safety & Logistics</option>
+                ${depts.map(d => `<option value="${d.name}">${d.name}</option>`).join("")}
               </select>
             </div>
             <div>
@@ -306,6 +444,17 @@ function openRequestModal(user, siteFilter) {
       </div>
     </div>
   `);
+
+  // Dynamically load active departments from DB
+  (async () => {
+    try {
+      const { data: dbDepts } = await supabase.from('departments').select('name').eq('is_active', true).order('name');
+      const deptEl = document.getElementById('rq-department');
+      if (deptEl && dbDepts && dbDepts.length > 0) {
+        deptEl.innerHTML = dbDepts.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+      }
+    } catch (_) {}
+  })();
 
   // Auto-fill Unit on Material Select
   window._rqMaterialChange = function() {
@@ -391,4 +540,23 @@ function openRequestModal(user, siteFilter) {
       showToast(`Error submitting request: ${err.message}`, "error");
     }
   };
+}
+
+async function updateAllTabCounts(siteFilter) {
+  try {
+    const statuses = ["pending", "pm_approved", "issued", "collected", "completed", "returned", "expired"];
+    let q = supabase.from("material_requests").select("status");
+    if (siteFilter && siteFilter.length) q = q.in("site_id", siteFilter);
+    const { data, error } = await q;
+    if (error || !data) return;
+    const counts = {};
+    statuses.forEach(s => { counts[s] = 0; });
+    data.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+    statuses.forEach(s => {
+      const el = document.getElementById(`req-count-${s}`);
+      if (el) el.textContent = `(${counts[s]})`;
+    });
+  } catch (e) {
+    console.warn('[requests] tab count fetch:', e.message);
+  }
 }

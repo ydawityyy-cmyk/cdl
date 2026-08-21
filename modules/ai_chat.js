@@ -60,61 +60,115 @@ const TODAY_KEY = () => `cdl_ai_msgs_${_user?.id}_${new Date().toDateString()}`;
 
 export async function initAIChat(user, container) {
   _user = user;
-  const limit = AI_MSG_LIMITS[user.role] ?? 0;
+  _history = [];
+  _handlersAttached = false; // reset so new chat can re-attach
+
+  // Ensure _customPerms is populated — query role_permissions if not cached
+  if (!_user._customPerms && _user.role) {
+    try {
+      const { data: perms } = await supabase
+        .from('role_permissions')
+        .select('permission_key')
+        .eq('role_key', _user.role);
+      _user._customPerms = (perms || []).map(p => p.permission_key);
+    } catch (_) {
+      _user._customPerms = [];
+    }
+  }
+
+  const customPerms = user._customPerms || [];
+  const isCustomWithAI = customPerms.includes('ai:access');
+  const limit = isCustomWithAI ? 20 : (AI_MSG_LIMITS[user.role] ?? 0);
+  const hasAIAccess = limit > 0 || isCustomWithAI;
+
+  if (!hasAIAccess) {
+    // Show locked AI card — do not init chat handlers
+    const aiSection = container
+      ? container.querySelector('#ai-advisor-section, #ai-panel, [id*="ai"]')
+      : document.getElementById('ai-advisor-section') || document.querySelector('.ai-advisor');
+    if (aiSection) {
+      aiSection.innerHTML = `
+        <div style="background:var(--bg-700);border:1px solid var(--border);border-radius:16px;padding:32px;text-align:center;margin-top:16px;">
+          <div style="font-size:32px;margin-bottom:12px;">🔒</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-100);margin-bottom:6px;">AI Advisor — Access Restricted</div>
+          <div style="font-size:13px;color:var(--text-300);max-width:360px;margin:0 auto;">
+            AI Advisor is available for executive and strategic roles. Contact your administrator if you need access.
+          </div>
+        </div>`;
+    }
+    return;
+  }
+
   if (limit > 0) {
     _msgCount = await getMsgCountFromSupabase(user);
-    setupChatHandlers(container);
-    await loadHistory();
   } else {
-    _msgCount = 0;
-    setupChatHandlers(container);
+    _msgCount = 0; // custom role with ai:access — unlimited for now
   }
+  setupChatHandlers(container);
+  await loadHistory();
 }
+
+let _isSending = false;
 
 function setupChatHandlers(container) {
   if (_handlersAttached) return;
   _handlersAttached = true;
-  document.addEventListener("click", (e) => { if (e.target.id === "ai-send" || e.target.closest("#ai-send")) sendMessage(); });
-  document.addEventListener("keydown", (e) => { if (e.target.id === "ai-input" && e.key === "Enter") sendMessage(); });
-  const root = container || document;
-  setTimeout(() => {
-    const sendBtn = root.querySelector("#ai-send");
-    const input = root.querySelector("#ai-input");
-    if (sendBtn && input) { sendBtn.addEventListener("click", sendMessage); input.addEventListener("keydown", e => { if (e.key === "Enter") sendMessage(); }); }
-  }, 100);
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("#ai-send");
+    if (btn) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.target && e.target.id === "ai-input" && e.key === "Enter") {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
 }
 
 async function sendMessage() {
-  if (!_user) return;
-  const limit = AI_MSG_LIMITS[_user.role] ?? 0;
+  if (!_user || _isSending) return;
+  const input = document.getElementById("ai-input");
+  const text = input ? input.value.trim() : "";
+  if (!text) return;
+
+  const customPerms = _user._customPerms || [];
+  const isCustomWithAI = customPerms.includes('ai:access');
+  const limit = isCustomWithAI ? 20 : (AI_MSG_LIMITS[_user.role] ?? 0);
   if (limit !== Infinity && _msgCount >= limit) {
     appendMsg("system", `Daily limit of ${limit} messages reached. Resets tomorrow.`);
     return;
   }
-  const input = document.getElementById("ai-input");
-  const text = input.value.trim();
-  if (!text) return;
+
+  _isSending = true;
   input.value = "";
   appendMsg("user", text);
   const thinking = appendMsg("ai", "✦ Thinking…", true);
-  _msgCount++;
-  await updateMsgCountInSupabase(_user, _msgCount);
-  const systemPrompt = getSystemPrompt(_user);
-  
-  const recentHistory = _history.slice(-10).map(m => ({
-    role: m.role === "user" ? "user" : "assistant",
-    content: m.content
-  }));
 
   try {
+    _msgCount++;
+    updateMsgCountInSupabase(_user, _msgCount).catch(() => {});
+    const systemPrompt = getSystemPrompt(_user);
+    
+    const recentHistory = _history.slice(-10).map(m => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.content
+    }));
+
     const reply = await callAI(text, systemPrompt, recentHistory);
     thinking.remove();
     appendMsg("ai", reply);
     _history.push({ role: "user", content: text }, { role: "ai", content: reply });
-    await saveHistory();
+    saveHistory().catch(() => {});
   } catch (err) {
     thinking.remove();
     appendMsg("system", `Error: ${err.message}`);
+  } finally {
+    _isSending = false;
   }
 }
 

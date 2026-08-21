@@ -1,9 +1,12 @@
 // CDL — modules/dashboards_pm.js
 // Project Manager: Their assigned site(s) only. Spec: site-scoped, with daily popup.
 import { supabase, SITES, LOGO_URL } from "../config.js";
+import { ROLES } from "./roles.js";
 import { initAIChat } from "./ai_chat.js";
 
 export async function renderPMDashboard(container, user) {
+  const role = ROLES[user.role] || {};
+  const hasAI = (role.aiMsgsPerDay || 0) > 0 || (user._customPerms || []).includes('ai:access');
   const siteIds = user.site_ids || [];
   const siteParam = siteIds.length ? `site_id=in.(${siteIds.join(",")})` : "";
   const siteNames = siteIds.map(id=>SITES.find(s=>s.id===id)?.name||`Site ${id}`).join(", ");
@@ -28,30 +31,31 @@ export async function renderPMDashboard(container, user) {
         <h3 style="font-family:var(--font-display);font-size:15px;margin-bottom:14px;">⚠️ Low Stock Items</h3>
         <div id="pm-stock">Loading…</div>
       </div>
-      <div class="card" style="display:flex;flex-direction:column;height:420px;">
-        
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
-          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+            ${hasAI ? `
+      <div class="card" id="ai-advisor-section" style="display:flex;flex-direction:column;height:420px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
+            <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
+          </div>
+          <button onclick="window._aiClearChat()" style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;cursor:pointer;">✨ New Chat</button>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
-            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
-            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
-            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
-            ✨ New Chat / Clear
-          </button>
-          <span style="color:var(--text-300);font-size:11px;">5 msgs/day</span>
-        </div>
-      </div>
         <div id="ai-chat-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
         <div style="display:flex;gap:8px;">
-          <input id="ai-input" type="text" placeholder="Ask about your site…"
-            style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:9px;color:var(--text-primary);font-size:13px;" />
-          <button id="ai-send" style="background:var(--accent-blue);border:none;border-radius:8px;padding:9px 14px;color:#fff;font-weight:700;cursor:pointer;">→</button>
+          <input id="ai-input" type="text" placeholder="Ask about your site…" style="flex:1;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:9px;color:var(--text-100);font-size:13px;" />
+          <button id="ai-send" class="btn btn-gold btn-sm">→</button>
         </div>
-      </div>
+      </div>` : `
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:32px 20px;height:420px;">
+        <div style="font-size:36px;margin-bottom:12px;">🔒</div>
+        <div style="font-size:15px;font-weight:700;color:var(--text-100);margin-bottom:6px;">AI Advisor — Access Restricted</div>
+        <p style="font-size:12px;color:var(--text-300);max-width:260px;line-height:1.5;margin:0 auto 16px;">
+          AI Advisor is available for executive roles. Project Managers manage site requisitions and transfers directly via the operational dashboard.
+        </p>
+        <div style="font-size:11px;color:var(--gold);background:rgba(200,169,110,0.1);padding:4px 12px;border-radius:12px;">
+          Site Operations Mode
+        </div>
+      </div>`}
     </div>`;
 
   const [reqRes, stockRes, grnRes] = await Promise.all([
@@ -92,5 +96,5 @@ export async function renderPMDashboard(container, user) {
       </div>`).join("")
     : `<div style="color:var(--accent-green);font-size:13px;text-align:center;padding:20px;">✓ Stock OK</div>`;
 
-  initAIChat(user);
+  if (hasAI) initAIChat(user);
 }

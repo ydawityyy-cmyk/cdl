@@ -21,7 +21,7 @@ import { ROLES } from "./roles.js";
  * If the name is new, creates a material_watchlist entry and returns
  * { isNew: true, watchId } — the stock is NOT inserted; it waits for approval.
  */
-export async function checkAndQueueNewMaterial(materialName, siteId, skType, userId, userInfo) {
+export async function checkAndQueueNewMaterial(materialName, siteId, skType, userId, userInfo, customMeta = {}) {
   try {
     // Check if exact name exists as approved stock for this site+type
     const { data: existing, error: chkErr } = await supabase
@@ -68,14 +68,20 @@ export async function checkAndQueueNewMaterial(materialName, siteId, skType, use
     }
 
     // New material — queue for approval
+    // Priority: user's explicit customMeta > data.js lookup > fallback defaults
+    // Prevents the AquaLock bug: Plumbing/Rolls must not become Waterproofing/Pcs
     const matched = findMaterial(materialName);
+    const resolvedCategory = (customMeta && customMeta.category) ? customMeta.category : (matched?.category || "Other");
+    const resolvedUnit = (customMeta && customMeta.unit) ? customMeta.unit : (matched?.unit || "Pcs");
+    const resolvedCode = (customMeta && customMeta.code) ? customMeta.code : (matched?.code || null);
+
     const { data: saved, error: insErr } = await supabase
       .from("material_watchlist")
       .insert({
         material_name: materialName,
-        material_code: matched?.code || null,
-        category: matched?.category || "Other",
-        unit: matched?.unit || null,
+        material_code: resolvedCode,
+        category: resolvedCategory,
+        unit: resolvedUnit,
         site_id: siteId,
         storekeeper_type: skType,
         proposed_by: userId,

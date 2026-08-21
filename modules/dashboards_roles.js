@@ -1,3 +1,4 @@
+import { checkAndQueueNewMaterial } from "./material_approvals.js";
 // CDL — modules/dashboards_roles.js
 // Premium dashboards for: store_manager, storekeeper_*, transfer_officer,
 // procurement_officer, data_holder, site_overseer, office_manager, engineer, admin
@@ -5,6 +6,7 @@ import { supabase, SITES, LOGO_URL } from "../config.js";
 import { ROLES } from "./roles.js";
 import { initAIChat } from "./ai_chat.js";
 import { MATERIALS_DB } from "../data.js";
+import { showModal, closeModal, showToast } from "../app.js";
 
 // ── Shared Shell ─────────────────────────────────────────────────────────────
 function shell(container, user, title, subtitle) {
@@ -39,7 +41,23 @@ function siteName(id) { return SITES.find(s => s.id === id)?.name || `#${id}`; }
 
 // ── Main Router ──────────────────────────────────────────────────────────────
 export async function renderRoleDashboard(container, user) {
-  const role = ROLES[user.role] || {};
+  // For custom roles not in ROLES registry, build a proper descriptor
+  let role = ROLES[user.role];
+  if (!role) {
+    const formattedTitle = (user.role || 'Custom Role')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, l => l.toUpperCase());
+    const hasCustomAI = Array.isArray(user._customPerms) && user._customPerms.includes('ai:access');
+    role = {
+      label: formattedTitle,
+      badge: (user.role || 'CUSTOM').toUpperCase(),
+      color: 'var(--accent-gold)',
+      icon: '👤',
+      dashboardModule: 'dashboards_roles',
+      siteScope: 'assigned',
+      aiMsgsPerDay: hasCustomAI ? 20 : 0
+    };
+  }
   switch (user.role) {
     case "store_manager":          return renderStoreManager(container, user, role);
     case "storekeeper_local":
@@ -48,6 +66,57 @@ export async function renderRoleDashboard(container, user) {
     case "transfer_officer":       return renderTransferOfficer(container, user, role);
     case "procurement_officer":    return renderProcurementOfficer(container, user, role);
     case "data_holder":            return renderDataHolder(container, user, role);
+
+  // Global shortcut for Data Holder dashboard quick verification
+  window.verifyGRN = async (grnId) => {
+    try {
+      const { data: grn, error: fetchErr } = await supabase.from("grns").select("*").eq("id", grnId).single();
+      if (fetchErr || !grn) { showToast("GRN not found", "error"); return; }
+      
+      const items = Array.isArray(grn.items) ? grn.items : [];
+      const siteId = grn.site_id;
+      const skType = grn.storekeeper_type || "local";
+
+      for (const item of items) {
+        const itemName = item.name || item.material_name;
+        const itemQty = parseFloat(item.quantity || item.qty) || 0;
+        if (!itemName || itemQty <= 0) continue;
+
+        const { data: existing } = await supabase.from("stock").select("*").eq("site_id", siteId).eq("material_name", itemName).limit(1);
+        if (Array.isArray(existing) && existing.length) {
+          const cur = existing[0];
+          await supabase.from("stock").update({
+            quantity: (cur.quantity || 0) + itemQty,
+            unit_price: item.unit_price || cur.unit_price,
+            last_updated: new Date().toISOString(),
+            updated_by: user.id
+          }).eq("id", cur.id);
+        } else {
+          await supabase.from("stock").insert({
+            site_id: siteId,
+            material_name: itemName,
+            quantity: itemQty,
+            unit: item.unit || "Pcs",
+            unit_price: item.unit_price || 0,
+            storekeeper_type: skType,
+            updated_by: user.id
+          });
+        }
+      }
+
+      await supabase.from("grns").update({
+        status: "verified",
+        verified_by: user.id,
+        verified_at: new Date().toISOString()
+      }).eq("id", grnId);
+
+      showToast(`GRN verified — ${items.length} item(s) added to inventory`, "success");
+      renderDataHolder(container, user, role);
+    } catch (e) {
+      showToast(`Error: ${e.message}`, "error");
+    }
+  };
+
     case "site_overseer":          return renderSiteOverseer(container, user, role);
     case "admin":                  return renderAdminDash(container, user, role);
     default:                       return renderGeneric(container, user, role);
@@ -158,35 +227,63 @@ async function renderStoreManager(container, user, role) {
   // Button handler — attach after DOM
   const addBtn = document.getElementById('catalog-add-btn');
   if (addBtn) {
-    addBtn.addEventListener('click', async () => {
-      const materialName = prompt('Enter new material name:');
-      if (!materialName || materialName.trim() === '') {
-        showToast('Material name required', 'error');
-        return;
-      }
-      const trimmedName = materialName.trim();
-      const exists = MATERIALS_DB.some(m => m.name.toLowerCase() === trimmedName.toLowerCase());
-      if (exists) {
-        showToast('Material already exists in catalog', 'warning');
-        return;
-      }
-      const siteIds = user.site_ids || [];
-      const siteId = siteIds.length > 0 ? siteIds[0] : 1;
-      const storekeeperType = 'local';
-      const userInfo = { name: user.name };
-      try {
-        const result = await checkAndQueueNewMaterial(trimmedName, siteId, storekeeperType, user.id, userInfo);
-        if (result.isNew) {
-          showToast(`"${trimmedName}" queued for approval.`, 'info');
-        } else if (result.alreadyQueued) {
-          showToast(`"${trimmedName}" already pending approval.`, 'info');
-        } else {
-          showToast(`"${trimmedName}" is already in the catalog as approved stock.`, 'info');
+    addBtn.addEventListener('click', () => {
+      showModal(`
+        <h2 style="font-family:var(--font-display);font-size:18px;font-weight:700;margin-bottom:14px;">➕ Propose New Material</h2>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div>
+            <label style="font-size:11px;color:var(--text-300);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px;">Material Name *</label>
+            <input id="cat-mat-name" type="text" placeholder="e.g. Sika Waterproofing Mortar 25kg" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:9px;color:var(--text-100);font-size:13px;">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <label style="font-size:11px;color:var(--text-300);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px;">Category</label>
+              <select id="cat-mat-cat" style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:9px;color:var(--text-100);font-size:13px;">
+                <option value="Civil & Masonry">Civil & Masonry</option>
+                <option value="Structural Steel">Structural Steel</option>
+                <option value="Electrical & MEP">Electrical & MEP</option>
+                <option value="Plumbing">Plumbing</option>
+                <option value="Finishing">Finishing</option>
+                <option value="Tools & Hardware">Tools & Hardware</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-300);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px;">Unit</label>
+              <input id="cat-mat-unit" type="text" placeholder="Bags, Pcs, Kgs..." style="width:100%;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:9px;color:var(--text-100);font-size:13px;">
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:6px;">
+            <button id="cat-submit-btn" onclick="window._submitNewCatalogMaterial()" class="btn btn-gold" style="flex:1;">Queue for Approval</button>
+            <button onclick="window._closeModal()" class="btn btn-ghost">Cancel</button>
+          </div>
+        </div>
+      `);
+
+      window._submitNewCatalogMaterial = async () => {
+        const materialName = document.getElementById('cat-mat-name')?.value?.trim();
+        const category = document.getElementById('cat-mat-cat')?.value || 'Other';
+        const unit = document.getElementById('cat-mat-unit')?.value?.trim() || 'Pcs';
+
+        if (!materialName) { showToast('Material name required', 'error'); return; }
+        const exists = MATERIALS_DB.some(m => m.name.toLowerCase() === materialName.toLowerCase());
+        if (exists) { showToast('Material already exists in catalog', 'warning'); return; }
+        const siteIds = user.site_ids || [];
+        const siteId = siteIds.length > 0 ? siteIds[0] : 1;
+        try {
+          const result = await checkAndQueueNewMaterial(materialName, siteId, 'local', user.id, { name: user.name }, { category, unit });
+          closeModal();
+          if (result.isNew) {
+            showToast(`"${materialName}" queued for approval.`, 'info');
+          } else if (result.alreadyQueued) {
+            showToast(`"${materialName}" already pending approval.`, 'info');
+          } else {
+            showToast(`"${materialName}" is already in the catalog.`, 'info');
+          }
+          renderCatalog();
+        } catch(err) {
+          showToast(`Error: ${err.message}`, 'error');
         }
-        renderCatalog();
-      } catch (err) {
-        showToast(`Error: ${err.message}`, 'error');
-      }
+      };
     });
   }
 
@@ -230,8 +327,11 @@ async function renderStorekeeper(container, user, role) {
   shell(container, user, `Storekeeper · ${typeLabel}`, "GRN Scanner · Issue Requests · No AI");
   const skType = role.storekeeperType || "local";
   const siteParam = siteIds.length ? `site_id=in.(${siteIds.join(",")})&` : "";
-  const stockRes = await supabase.from("stock").select("*").eq("storekeeper_type", skType).limit(100);
-  stock = stockRes.data || [];
+  let stock = [];
+  try {
+    const stockRes = await supabase.from("stock").select("*").eq("storekeeper_type", skType).limit(100);
+    stock = stockRes.data || [];
+  } catch (e) { console.warn("[SK] stock error:", e); }
   container.querySelector("#dash-kpis").innerHTML = [
     kpi("📦", stock.length, "Items Tracked", "var(--accent-blue)"),
     kpi("⚠️", stock.filter(i => (i.quantity || 0) < 10).length, "Low Stock", "var(--accent-orange)"),
@@ -271,7 +371,7 @@ async function renderStorekeeper(container, user, role) {
 // ── TRANSFER OFFICER ─────────────────────────────────────────────────────────
 async function renderTransferOfficer(container, user, role) {
   shell(container, user, "Transfer Officer", "Active Transfers · Pickup & Delivery");
-  const transfersRes = await supabase.from("transfers").select("*").in("status", ["am_approved", "preparing", "picked_up", "in_transit", "delivered"]).limit(50);
+  const transfersRes = await supabase.from("transfers").select("*").order("created_at", { ascending: false }).limit(50);
   const transfers = transfersRes.data || [];
   const active = transfers.filter(t => !["completed", "rejected"].includes(t.status));
   container.querySelector("#dash-kpis").innerHTML = [
@@ -394,8 +494,11 @@ async function renderProcurementOfficer(container, user, role) {
 // ── DATA HOLDER ──────────────────────────────────────────────────────────────
 async function renderDataHolder(container, user, role) {
   shell(container, user, "Data Holder", "GRN Verification · Discrepancy Flagging");
-  const grnsRes = await supabase.from("grns").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(30);
-  grns = grnsRes.data || [];
+  let grns = [];
+  try {
+    const grnsRes = await supabase.from("grns").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(30);
+    grns = grnsRes.data || [];
+  } catch (e) { console.warn("[DH] grns error:", e); }
   container.querySelector("#dash-kpis").innerHTML = [
     kpi("📦", grns.length, "GRNs to Verify", "var(--accent-blue)"),
   ].join("");
@@ -652,8 +755,8 @@ async function renderAdminDash(container, user, role) {
         const val = data?.[0]?.value?.trim();
         if (statusEl) {
           if (val) {
-            statusEl.innerHTML = '<span style="color:#2ecc71;">✅ <strong>Gemini key active</strong> — AI Advisor is powered by Google Gemini (key: …' + val.slice(-6) + ')</span>';
-            if (inputEl) inputEl.placeholder = 'Current key active: …' + val.slice(-6) + ' (paste new to replace)';
+            statusEl.innerHTML = '<span style="color:#2ecc71;">✅ <strong>Gemini key active</strong> — AI Advisor is powered by Google Gemini</span>';
+            if (inputEl) inputEl.placeholder = '•••••••••••••••• (paste new key to replace)';
           } else {
             statusEl.innerHTML = '<span style="color:var(--gold);">⚠️ No key set — AI is using built-in reasoning engine. Add key to unlock full smart assistant.</span>';
           }
@@ -791,42 +894,81 @@ async function renderAdminDash(container, user, role) {
   }
 }
 
-// ── GENERIC FALLBACK ─────────────────────────────────────────────────────────
+// ── GENERIC / CUSTOM ROLE WORKSPACE ──────────────────────────────────────────
 async function renderGeneric(container, user, role) {
-  shell(container, user, role.label || user.role, "Dashboard");
+  const roleTitle = role.label || (user.role ? user.role.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()) : "Custom Role");
+  shell(container, user, roleTitle, "Operational Workspace");
+
+  const hasAI = (role.aiMsgsPerDay || 0) > 0 || (Array.isArray(user._customPerms) && user._customPerms.includes("ai:access"));
+  const assignedSites = (user.site_ids || []).map(id => SITES.find(s => s.id === id)?.name || `#${id}`);
+  const permsCount = (user._customPerms || []).length;
+
+  const kpisEl = container.querySelector("#dash-kpis");
+  if (kpisEl) {
+    kpisEl.innerHTML = [
+      kpi("🏢", assignedSites.length || "All", "Assigned Sites", "var(--accent-blue)"),
+      kpi("🔑", permsCount || "Standard", "Permissions", "var(--accent-purple)"),
+      kpi("✦", hasAI ? "Active" : "Locked", "AI Advisor", hasAI ? "var(--accent-gold)" : "var(--text-muted)"),
+      kpi("●", "Operational", "System Status", "var(--accent-green)")
+    ].join("");
+  }
+
   const main = container.querySelector("#dash-main");
   if (!main) return;
-  const hasAI = (role.aiMsgsPerDay || 0) > 0;
-  main.innerHTML = `<div class="card" style="text-align:center;padding:60px;">
-    <div style="font-size:40px;margin-bottom:12px;">👤</div>
-    <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);">${role.label || user.role}</h3>
-    <p style="color:var(--text-muted);margin-top:8px;">Use the navigation to access your modules.</p>
-  </div>`;
+
+  main.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr;gap:20px;">
+      <div class="card" style="padding:24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h3 style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:4px;">${roleTitle} Workspace</h3>
+            <p style="color:var(--text-muted);font-size:13px;">Logged in as <strong>${user.email || user.name}</strong> · Assigned: ${assignedSites.join(", ") || "Portfolio-wide"}</p>
+          </div>
+          <span style="background:rgba(212,175,110,0.15);color:var(--gold);padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">
+            ${user.role.toUpperCase()}
+          </span>
+        </div>
+        <p style="font-size:13px;color:var(--text-200);line-height:1.6;">
+          Welcome to your tailored operational console. Use the navigation bar above or the actions below to access your permitted project modules and data streams.
+        </p>
+      </div>
+
+      ${hasAI ? `
+        <div class="card" style="padding:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Site Intelligence Advisor</span>
+              <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Role Permitted</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
+                style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
+                onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+                onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
+                ✨ New Chat / Clear
+              </button>
+            </div>
+          </div>
+          <div id="ai-chat-messages" style="height:340px;min-height:220px;max-height:500px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+          <div style="display:flex;gap:8px;">
+            <input id="ai-input" type="text" placeholder="Ask about site stock, material status, project logistics…"
+              style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
+            <button id="ai-send" class="btn btn-gold btn-sm">→</button>
+          </div>
+        </div>
+      ` : `
+        <div class="card" style="padding:20px;text-align:center;background:rgba(255,255,255,0.02);border:1px dashed var(--border);">
+          <div style="font-size:24px;margin-bottom:8px;opacity:0.6;">🔒</div>
+          <div style="font-size:13px;font-weight:600;color:var(--text-200);margin-bottom:4px;">AI Advisor — Access Restricted</div>
+          <p style="font-size:12px;color:var(--text-muted);max-width:480px;margin:0 auto;">
+            AI Site Intelligence is not assigned to this role profile. To request access, contact your CDL System Administrator.
+          </p>
+        </div>
+      `}
+    </div>
+  `;
+
   if (hasAI) {
-    main.innerHTML += `<div class="card" style="margin-top:20px;">
-      
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
-          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
-            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
-            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
-            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
-            ✨ New Chat / Clear
-          </button>
-          <span style="color:var(--text-300);font-size:11px;">Unlimited messages</span>
-        </div>
-      </div>
-      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
-      <div style="display:flex;gap:8px;">
-        <input id="ai-input" type="text" placeholder="Ask anything…"
-          style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
-        <button id="ai-send" class="btn btn-gold btn-sm">→</button>
-      </div>
-    </div>`;
     initAIChat(user);
   }
 }

@@ -91,7 +91,7 @@ async function loadCounts(user, canApprove) {
             background:${statusColor}20;color:${statusColor};">${c.status}</span>
         </td>
         <td style="padding:10px 8px;color:var(--text-200);">${countedItems}</td>
-        <td style="padding:10px 8px;color:${varianceItems > 0 ? "var(--orange)" : "var(--text-200);"}">${varianceItems > 0 ? `⚠ ${varianceItems}` : varianceItems}</td>
+        <td style="padding:10px 8px;color:${varianceItems > 0 ? "var(--orange)" : "var(--text-200)"}">${varianceItems > 0 ? `⚠ ${varianceItems}` : varianceItems}</td>
         <td style="padding:10px 8px;color:var(--text-300);font-size:12px;">${c.created_by_name || "—"}</td>
         <td style="padding:10px 8px;">${actions || "—"}</td>
       </tr>`;
@@ -262,7 +262,7 @@ window._pcReview = async (countId) => {
             <td style="padding:6px;color:var(--text-100);">${i.material_name}</td>
             <td style="padding:6px;text-align:right;color:var(--text-200);">${i.system_qty || 0}</td>
             <td style="padding:6px;text-align:right;color:var(--text-100);">${i.counted_qty || 0}</td>
-            <td style="padding:6px;text-align:right;color:${diff > 0 ? "var(--green)" : diff < 0 ? "var(--red)" : "var(--text-300)};">${diff}</td>
+            <td style="padding:6px;text-align:right;color:${diff > 0 ? "var(--green)" : diff < 0 ? "var(--red)" : "var(--text-300)"};>${diff}</td>
             <td style="padding:6px;color:${statusColor};font-weight:500;">${statusLabel}</td>
           </tr>`;
         }).join("")}
@@ -303,7 +303,7 @@ window._pcReview = async (countId) => {
       // This would trigger creation of adjustment entries
       closeModal();
     };
-  }; catch (err) {
+  } catch (err) {
     showToast(`Error: ${err.message}`, "error");
   }
 };

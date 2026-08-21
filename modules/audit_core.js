@@ -3,12 +3,31 @@
 // Immutable audit trail — called by EVERY module on every action.
 // ============================================================
 
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "../config.js";
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "../config.js";
 
-// Get current user from localStorage (avoids circular import with app.js)
-function getCurrentUser() {
-  try { return JSON.parse(localStorage.getItem("cdl_session") || "null"); }
-  catch { return null; }
+// Get current user from Supabase Auth session
+async function getAuthToken() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || SUPABASE_ANON_KEY;
+  } catch {
+    return SUPABASE_ANON_KEY;
+  }
+}
+
+// Get actor from Supabase user
+async function getActor() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    // Try profile from cache in localStorage to avoid circular deps
+    const cachedProfile = (() => {
+      try { return JSON.parse(localStorage.getItem("cdl_user_profile") || "null"); } catch { return null; }
+    })();
+    return cachedProfile || { id: user.id, name: user.email, role: "unknown" };
+  } catch {
+    return null;
+  }
 }
 
 // Persistent session ID via crypto.randomUUID()
@@ -35,41 +54,43 @@ const pendingAudits = [];
  * @param {string} [entry.reason]     - Human-readable reason
  */
 export async function logAudit({ action, module, record_id, before, after, reason }) {
-  const user = getCurrentUser();
-  if (!user) return;
-
-  const entry = {
-    actor_id:     user.id,
-    actor_name:   user.name,
-    actor_role:   user.role,
-    action,
-    module,
-    record_id:    record_id || null,
-    before_value: before ? JSON.stringify(before) : null,
-    after_value:  after  ? JSON.stringify(after)  : null,
-    reason:       reason || null,
-    session_id:   getSessionId(),
-    timestamp:    new Date().toISOString(),
-  };
-
   try {
+    const actor = await getActor();
+    if (!actor) return;
+    const jwt = await getAuthToken();
+
+    const entry = {
+      actor_id:     actor.id,
+      actor_name:   actor.name || actor.email || "System",
+      actor_role:   actor.role || "unknown",
+      action,
+      module,
+      record_id:    record_id || null,
+      before_value: before ? JSON.stringify(before) : null,
+      after_value:  after  ? JSON.stringify(after)  : null,
+      reason:       reason || null,
+      session_id:   getSessionId(),
+      timestamp:    new Date().toISOString(),
+    };
+
     const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "Authorization": `Bearer ${jwt}`,
         "Prefer": "return=minimal"
       },
       body: JSON.stringify(entry)
     });
+
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      throw new Error(`Supabase ${res.status}: ${errText}`);
+      console.warn("[AUDIT] Failed to log:", action, res.status, errText);
+      pendingAudits.push({ entry, jwt });
     }
   } catch (err) {
-    console.error("[AUDIT] Failed to log:", entry, err);
-    pendingAudits.push(entry);
+    console.warn("[AUDIT] logAudit error:", action, err.message);
   }
 }
 
@@ -81,23 +102,24 @@ export async function syncPendingAudits() {
   if (!pendingAudits.length) return;
   const batch = [...pendingAudits];
   pendingAudits.length = 0;
-  for (const entry of batch) {
+  const jwt = await getAuthToken();
+  for (const { entry } of batch) {
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/audit_log`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "apikey": SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "Authorization": `Bearer ${jwt}`,
           "Prefer": "return=minimal"
         },
         body: JSON.stringify(entry)
       });
       if (!res.ok) {
-        throw new Error(`Supabase ${res.status}`);
+        pendingAudits.push({ entry, jwt });
       }
     } catch {
-      pendingAudits.push(entry);
+      pendingAudits.push({ entry, jwt });
     }
   }
 }

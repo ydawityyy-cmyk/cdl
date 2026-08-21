@@ -572,3 +572,11 @@ async function openViewGRNModal(id, user) {
     closeModal();
   }
 }
+
+// Global shortcut for dashboard Verify buttons
+if (typeof window !== "undefined") {
+  window.verifyGRN = async (id) => {
+    const activeUser = (typeof getCurrentUser === 'function' ? getCurrentUser() : null) || { role: 'data_holder' };
+    return verifyAndStockGRN(id, activeUser);
+  };
+}

@@ -9,7 +9,8 @@ import { supabase, SITES } from "../config.js";
 import { callAIWithImages } from "./ai_engine.js";
 import { logAudit } from "./audit_core.js";
 import { showToast, showModal, closeModal } from "../app.js";
-import { findMaterial, UNITS } from "../data.js";
+import { findMaterial, MATERIALS_DB, UNITS } from "../data.js";
+if (typeof window !== "undefined") { window.MATERIALS_DB = MATERIALS_DB; }
 import { checkAndQueueNewMaterial } from "./material_approvals.js";
 
 export async function renderStorekeeperDashboard(container, user) {
@@ -81,7 +82,8 @@ export async function renderStorekeeperDashboard(container, user) {
   window.openGRNScanner = () => openGRNScannerModal(user, skType, siteIds[0]);
   window.openManualGRN = () => openManualGRNModal(user, skType, siteIds[0]);
   window.openIncidentReport = () => openIncidentModal(user, skType, siteIds[0]);
-  window.issueStock = (reqId, reqJson) => handleStockIssue(user, reqId, reqJson, skType);
+  window._skRequestMap = {};
+  window.issueStock = (reqId) => handleStockIssue(user, reqId, window._skRequestMap[reqId], skType);
 
   await Promise.all([
     loadStock(skType, siteParam, typeColor),
@@ -141,6 +143,8 @@ async function loadIssueRequests(siteParam) {
     const el = document.getElementById("sk-pending-issues"); if (el) el.textContent = arr.length;
     const list = document.getElementById("sk-issue-list"); if (!list) return;
     if (!arr.length) { list.innerHTML = `<div style="color:var(--accent-green);font-size:13px;text-align:center;padding:20px;">✓ No pending issue requests</div>`; return; }
+    window._skRequestMap = {};
+    arr.forEach(r => { window._skRequestMap[r.id] = r; });
     list.innerHTML = arr.map(r => `
       <div style="padding:10px;border-radius:8px;border:1px solid var(--border);margin-bottom:8px;background:var(--bg-secondary);">
         <div style="display:flex;align-items:start;justify-content:space-between;gap:8px;">
@@ -148,7 +152,7 @@ async function loadIssueRequests(siteParam) {
             <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${r.material_name}</div>
             <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">Qty: ${r.quantity} ${r.unit||""} · ${new Date(r.created_at).toLocaleDateString("en-KE")}</div>
           </div>
-          <button onclick="window.issueStock('${r.id}',${JSON.stringify(JSON.stringify(r))})"
+          <button onclick="window.issueStock('${r.id}')"
             style="background:var(--accent-green);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;white-space:nowrap;">Issue →</button>
         </div>
       </div>`).join("");
@@ -358,7 +362,7 @@ function openManualGRNModal(user, skType, siteId) {
     <div id="mg-items" style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;">
       <div style="display:grid;grid-template-columns:3fr 1fr 1fr 1fr 20px;gap:5px;align-items:center;" data-row="0">
         <select data-f="name" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;" onchange="
-  const u = window.MATERIALS_DB?.find(m => m.name === this.value)?.unit;
+  const u = (window.MATERIALS_DB || MATERIALS_DB)?.find(m => m.name === this.value)?.unit;
   if (u) {
     const row = this.closest('[data-row]');
     const usel = row?.querySelector('[data-f=unit]');
@@ -382,7 +386,7 @@ function openManualGRNModal(user, skType, siteId) {
     const i = c.children.length;
     c.insertAdjacentHTML("beforeend", `<div style="display:grid;grid-template-columns:3fr 1fr 1fr 1fr 20px;gap:5px;align-items:center;" data-row="${i}">
       <select data-f="name" style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:5px;padding:6px;color:var(--text-primary);font-size:12px;" onchange="
-  const u = window.MATERIALS_DB?.find(m => m.name === this.value)?.unit;
+  const u = (window.MATERIALS_DB || MATERIALS_DB)?.find(m => m.name === this.value)?.unit;
   if (u) {
     const row = this.closest('[data-row]');
     const usel = row?.querySelector('[data-f=unit]');
@@ -442,44 +446,60 @@ function openManualGRNModal(user, skType, siteId) {
 }
 
 // ─── Stock Issue ──────────────────────────────────────────────
-async function handleStockIssue(user, reqId, reqJson, skType) {
-  let req; try { req = JSON.parse(reqJson); } catch { return; }
+async function handleStockIssue(user, reqId, req, skType) {
+  if (!req || typeof req !== 'object') {
+    try {
+      const { data, error } = await supabase.from('material_requests').select('*').eq('id', reqId).single();
+      if (error || !data) { showToast('Could not load request: ' + (error?.message || 'Not found'), 'error'); return; }
+      req = data;
+    } catch(e) { showToast('Failed to load request: ' + e.message, 'error'); return; }
+  }
   const siteId = req.site_id;
+  
+  // Intelligent stock search: exact match, code match, or keyword/category match on site
   const { data: stockArr, error: stockErr } = await supabase
     .from("stock")
     .select("*")
-    .eq("site_id", siteId)
-    .eq("material_name", req.material_name)
-    .eq("storekeeper_type", skType)
-    .limit(1);
+    .eq("site_id", siteId);
   if (stockErr) throw stockErr;
-  const stock = Array.isArray(stockArr) ? stockArr[0] : null;
+
+  let stock = null;
+  if (stockArr && stockArr.length > 0) {
+    const reqName = (req.material_name || '').toLowerCase();
+    stock = stockArr.find(s => s.material_name?.toLowerCase() === reqName)
+         || stockArr.find(s => s.material_code && s.material_code === req.material_code)
+         || stockArr.find(s => reqName.includes('cement') && s.material_name?.toLowerCase().includes('cement') && (s.quantity || 0) >= req.quantity)
+         || stockArr.find(s => reqName.includes('cement') && s.material_name?.toLowerCase().includes('cement'))
+         || stockArr.find(s => reqName.includes('bar') && s.material_name?.toLowerCase().includes('bar'))
+         || stockArr.find(s => s.material_name?.toLowerCase() === reqName);
+  }
+
   const available = stock?.quantity || 0;
   const enough = available >= req.quantity;
+
   showModal(`
     <h2 style="font-family:var(--font-display);font-size:20px;font-weight:700;margin-bottom:14px;">📦 Issue Material</h2>
     <div style="background:var(--bg-secondary);border-radius:8px;padding:14px;margin-bottom:16px;">
       <div style="font-size:15px;color:var(--text-primary);font-weight:600;">${req.material_name}</div>
+      ${stock && stock.material_name !== req.material_name ? `<div style="font-size:12px;color:var(--accent-gold);margin-top:2px;">Matched Stock Item: ${stock.material_name}</div>` : ''}
       <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Requested: ${req.quantity} ${req.unit||""}</div>
-      <div style="font-size:13px;margin-top:4px;color:${enough?"var(--accent-green)":"var(--accent-red)"};">Available: ${available} ${stock?.unit||""}</div>
+      <div style="font-size:13px;margin-top:4px;color:${enough?"var(--accent-green)":"var(--accent-red)"};">Available: ${available} ${stock?.unit||req.unit||""}</div>
     </div>
     ${!enough?`<div style="background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);border-radius:8px;padding:10px;margin-bottom:16px;color:var(--accent-red);font-size:13px;">⚠️ Insufficient stock. ${available} available, ${req.quantity} requested.</div>`:""}
-    <button onclick="window._confirmIssue('${reqId}','${stock?.id||""}',${req.quantity},'${req.material_name.replace(/'/g,"\\'")}')"
+    <button id="sk-confirm-issue-btn" onclick="window._confirmIssue()"
       class="btn btn-gold" style="width:100%;" ${enough?"":"disabled"}>✓ Confirm Issue</button>`);
 
-  window._confirmIssue = async (reqId, stockId, qty, name) => {
+  window._confirmIssue = async () => {
+    const btn = document.getElementById("sk-confirm-issue-btn");
+    if (!enough || available < req.quantity) {
+      showToast(`Cannot issue: Insufficient stock (${available} available, ${req.quantity} requested)`, "error");
+      return;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = "Issuing..."; }
+    const qty = req.quantity;
+    const name = stock?.material_name || req.material_name;
+    const stockId = stock?.id;
     try {
-      const { error: reqErr } = await supabase
-        .from("material_requests")
-        .update({
-          status: "issued",
-          issued_by: user.id,
-          issued_at: new Date().toISOString(),
-          expires_at: new Date(new Date().setHours(23, 59, 59, 0)).toISOString()
-        })
-        .eq("id", reqId);
-      if (reqErr) throw reqErr;
-
       if (stockId && stock) {
         const { error: stockErr } = await supabase
           .from("stock")
@@ -492,17 +512,30 @@ async function handleStockIssue(user, reqId, reqJson, skType) {
         if (stockErr) throw stockErr;
       }
 
+      const { error: reqErr } = await supabase
+        .from("material_requests")
+        .update({
+          status: "issued",
+          issued_by: user.id,
+          issued_at: new Date().toISOString(),
+          expires_at: new Date(new Date().setHours(23, 59, 59, 0)).toISOString()
+        })
+        .eq("id", reqId);
+      if (reqErr) throw reqErr;
+
       if (req?.requested_by) {
-        await sendNotif(req.requested_by, "📦 Material Issued & Ready", `${name} (${qty} ${req.unit || ''}) has been issued by Storekeeper ${user.name}. Please collect at store.`, "material_issued", reqId);
+        await sendNotif(req.requested_by, "📦 Material Ready for Collection", `${name} (${qty} ${req.unit || ''}) has been issued by Storekeeper ${user.name || 'Storekeeper'}. Please collect at store.`, "issue_ready", reqId);
       }
-      await logAudit({ action: "stock_issued", module: "storekeeper", record_id: reqId, before: { quantity: stock?.quantity }, after: { quantity: (stock?.quantity || 0) - qty }, reason: `Issued ${qty}×${name} by ${user.name}` });
+      await logAudit({ action: "stock_issued", module: "storekeeper", record_id: reqId, before: { quantity: stock?.quantity }, after: { quantity: (stock?.quantity || 0) - qty }, reason: `Issued ${qty}×${name} by ${user.name || 'Storekeeper'}` });
       closeModal();
       showToast(`Issued ${qty} × ${name}`, "success");
-      // Refresh the storekeeper dashboard lists
       if (window.loadSKStock) window.loadSKStock();
       if (window.loadSKIssues) window.loadSKIssues();
       if (window.loadSKGRNs) window.loadSKGRNs();
-    } catch(err) { showToast("Failed: " + err.message, "error"); }
+    } catch(err) {
+      if (btn) { btn.disabled = false; btn.textContent = "✓ Confirm Issue"; }
+      showToast("Failed: " + err.message, "error");
+    }
   };
 }
 

@@ -25,10 +25,26 @@ export async function renderAMDashboard(container, user) {
         <div id="am-procurement">Loading…</div>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;">
+    <div style="display:grid;grid-template-columns:1fr 360px;gap:20px;">
       <div class="card">
         <h3 style="font-family:var(--font-display);font-size:15px;margin-bottom:14px;">📦 Stock Overview (All Sites)</h3>
-        <div style="position:relative;height:220px;"><canvas id="am-chart" height="200" style="width:100%;height:220px;"></canvas></div>
+        <div style="position:relative;height:340px;"><canvas id="am-chart" height="340" style="width:100%;height:340px;"></canvas></div>
+      </div>
+      <!-- Asset Manager AI Advisor -->
+      <div class="card" id="ai-advisor-section" style="display:flex;flex-direction:column;height:420px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:7px;height:7px;border-radius:50%;background:var(--accent-green);box-shadow:0 0 8px var(--accent-green);"></div>
+            <span style="font-size:14px;font-weight:700;color:var(--accent-green);">✦ Asset AI Advisor</span>
+          </div>
+          <button onclick="window._aiClearChat()" style="background:transparent;border:none;color:var(--text-300);cursor:pointer;font-size:11px;">✨ New Chat</button>
+        </div>
+        <div id="ai-chat-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:10px;font-size:13px;"></div>
+        <div style="display:flex;gap:8px;">
+          <input id="ai-input" type="text" placeholder="Ask about machinery, stock, transfer logistics…"
+            style="flex:1;background:var(--bg-700);border:1px solid var(--border);border-radius:8px;padding:9px;color:var(--text-100);font-size:13px;" />
+          <button id="ai-send" class="btn btn-gold" style="padding:9px 14px;">→</button>
+        </div>
       </div>
     </div>`;
 
@@ -74,7 +90,7 @@ export async function renderAMDashboard(container, user) {
     const vals=SITES.map(s=>stock.filter(i=>i.site_id===s.id).reduce((a,i)=>a+((i.quantity||0)*(i.unit_price||0)),0));
     try {
       cv._chart=new Chart(cv,{type:"bar",data:{labels:SITES.map(s=>s.name.split(" ")[0]),
-      datasets:[{data:vals,backgroundColor:"rgba(46,160,67,0.4)",borderColor:"var(--accent-green)",borderWidth:1,borderRadius:4}]},
+      datasets:[{label:"Stock Value (KES)",data:vals,backgroundColor:"rgba(46,160,67,0.4)",borderColor:"var(--accent-green)",borderWidth:1,borderRadius:4}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
         scales:{y:{grid:{color:"rgba(255,255,255,0.04)"},ticks:{color:"#8892a0"}},x:{grid:{display:false},ticks:{color:"#8892a0",font:{size:10}}}}}});
     } catch(e) { console.error("[AM Chart]",e); }

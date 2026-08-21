@@ -88,7 +88,7 @@ exports.handler = async (event) => {
 
     // 2. Parse target user payload
     const body = JSON.parse(event.body || '{}');
-    const { name, email, role, password, position, site_ids } = body;
+    const { name, email, role, password, position, site_ids, custom_perms } = body;
 
     if (!name || !email || !role) {
       return {
@@ -152,7 +152,8 @@ exports.handler = async (event) => {
       email: email.trim().toLowerCase(),
       role,
       position: position || null,
-      site_ids: Array.isArray(site_ids) ? site_ids : [],
+      site_ids: Array.isArray(site_ids) ? site_ids.map(Number).filter(n => !isNaN(n) && n > 0) : [],
+      custom_perms: Array.isArray(custom_perms) ? custom_perms.filter(p => typeof p === 'string' && p.length > 0) : [],
       is_active: true,
       password_hash: userPassword
     };

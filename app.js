@@ -1,6 +1,6 @@
 // CDL Site Management v11 — app.js
 // Main entry: auth, routing, navigation, modal/toast, 3D shell
-import { supabase, APP_NAME, APP_VERSION, SITES } from "./config.js";
+import { supabase, APP_NAME, APP_VERSION, SITES, syncLiveSites } from "./config.js";
 import { ROLES } from "./modules/roles.js";
 import { checkAccess } from "./modules/nav_guard.js";
 import { logAudit } from "./modules/audit_core.js";
@@ -13,9 +13,12 @@ import { triggerLoginPopup } from "./modules/popups.js";
 // ─── Session ─────────────────────────────────────────────────────────────────
 let currentUser = null;
 export function getCurrentUser() { return currentUser; }
+export { syncLiveSites };
+window.syncLiveSites = syncLiveSites;
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
+  await syncLiveSites();
   // Check for existing Supabase session
   const { data: { session } } = await supabase.auth.getSession();
   if (session?.access_token) {
@@ -27,7 +30,23 @@ document.addEventListener("DOMContentLoaded", async () => {
         .eq('id', user.id)
         .eq('is_active', true)
         .single();
-      if (profile) { currentUser = profile; showApp(); return; }
+      if (profile) {
+        currentUser = profile;
+        currentUser._customPerms = [];
+        // Cache minimal profile for audit_core.js JWT resolution
+        try { localStorage.setItem("cdl_user_profile", JSON.stringify({ id: profile.id, name: profile.name, email: profile.email, role: profile.role })); } catch (_) {}
+        const builtInRoles = ['admin','company_owner','ceo','asset_manager','office_manager','finance',
+          'project_manager','engineer','store_manager','storekeeper_local','storekeeper_import',
+          'storekeeper_scaffolding','procurement_officer','transfer_officer','data_holder','supervisor','site_overseer'];
+        if (!builtInRoles.includes(profile.role)) {
+          try {
+            const { data: perms } = await supabase.from('role_permissions').select('permission_key').eq('role_key', profile.role);
+            currentUser._customPerms = (perms || []).map(p => p.permission_key);
+          } catch (_) {}
+        }
+        showApp();
+        return;
+      }
     }
   }
   showLoginScreen();
@@ -69,6 +88,16 @@ async function handleLogin(email, password) {
     }
 
     currentUser = profile;
+    currentUser._customPerms = [];
+    // Cache minimal profile so audit_core.js can resolve actor
+    try { localStorage.setItem("cdl_user_profile", JSON.stringify({ id: profile.id, name: profile.name, email: profile.email, role: profile.role })); } catch (_) {}
+    // Load custom role permissions if not a built-in role
+    if (!['admin','company_owner','ceo','asset_manager','office_manager','finance','project_manager','engineer','store_manager','storekeeper_local','storekeeper_import','storekeeper_scaffolding','procurement_officer','transfer_officer','data_holder','supervisor','site_overseer'].includes(profile.role)) {
+      try {
+        const { data: perms } = await supabase.from('role_permissions').select('permission_key').eq('role_key', profile.role);
+        currentUser._customPerms = (perms || []).map(p => p.permission_key);
+      } catch (_) {}
+    }
     // Session is automatically persisted by Supabase client
     // No localStorage of user object needed
 
@@ -200,7 +229,7 @@ const NAV_ITEMS = [
   { key:"inventory",   icon:"◩",  label:"Inventory",  noRoles:["storekeeper_local","storekeeper_import","storekeeper_scaffolding","engineer","supervisor","office_manager","site_overseer","procurement_officer","transfer_officer","data_holder"] },
   { key:"grn",         icon:"◎",  label:"GRN Scanner" },
   { key:"requests",    icon:"◫",  label:"Requests",   noRoles:["storekeeper_local","storekeeper_import","storekeeper_scaffolding"] },
-  { key:"transfers",   icon:"⇄",  label:"Transfers",  noRoles:["storekeeper_local","storekeeper_import","storekeeper_scaffolding","engineer","finance","supervisor","office_manager","site_overseer","data_holder"] },
+  { key:"transfers",   icon:"⇄",  label:"Transfers",  noRoles:["engineer","finance","supervisor","office_manager","site_overseer","data_holder"] },
   { key:"procurement", icon:"◈",  label:"Procurement",noRoles:["storekeeper_local","storekeeper_import","storekeeper_scaffolding","engineer","supervisor","office_manager","site_overseer","data_holder","project_manager"] },
   { key:"incidents",   icon:"⚠",  label:"Incidents" },
   { key:"reports",     icon:"◳",  label:"Reports" },
@@ -305,7 +334,7 @@ async function renderAuditLog(container, user) {
           <td style="padding:12px 10px;color:var(--text-300);font-size:11px;">${r.actor_role || "—"}</td>
           <td style="padding:12px 10px;color:${ac};font-weight:600;font-size:11px;">${r.action}</td>
           <td style="padding:12px 10px;color:var(--text-200);">${r.module || "—"}</td>
-          <td style="padding:12px 10px;color:var(--text-300);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.reason || "—"}</td>
+          <td style="padding:12px 10px;color:var(--text-200);max-width:400px;word-break:break-word;" title="${r.reason || ''}">${r.record_id ? `<span style="font-family:var(--font-mono);font-size:10px;color:var(--text-400);background:var(--bg-700);padding:2px 6px;border-radius:4px;margin-right:6px;border:1px solid var(--border);">${r.record_id.slice(0,8)}</span>` : ''}${r.reason || (r.after_value ? `<span style="font-size:11px;color:var(--text-400);">${r.after_value.slice(0,80)}</span>` : '—')}</td>
         </tr>`;
       }).join("")}</tbody></table></div>`;
 }

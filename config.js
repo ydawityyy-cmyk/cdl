@@ -40,24 +40,28 @@ export const SITES = [
 ];
 
 // AI message limits per role
+// Only strategic/executive roles have AI access by default.
+// Operational roles are blocked at BOTH the UI and the backend Netlify function.
+// Custom roles with ai:access permission in role_permissions table can still get access.
 export const AI_MSG_LIMITS = {
   admin: Infinity,
   company_owner: 20,
   ceo: 7,
-  asset_manager: 0,
-  office_manager: 7,
-  finance: 7,
-  project_manager: 5,
-  engineer: 5,
+  asset_manager: 7,       // Enabled: oversees plant/equipment across all sites
+  office_manager: 0,
+  finance: 0,
+  // --- BLOCKED ROLES (ai:access custom permission can override per user) ---
+  project_manager: 0,
+  engineer: 0,
   store_manager: 0,
   storekeeper_local: 0,
   storekeeper_import: 0,
   storekeeper_scaffolding: 0,
-  procurement_officer: 5,
-  transfer_officer: 5,
-  data_holder: 5,
-  supervisor: 5,
-  site_overseer: 5,
+  procurement_officer: 0,
+  transfer_officer: 0,
+  data_holder: 0,
+  supervisor: 0,
+  site_overseer: 0,
 };
 
 // AI keys are stored server-side in Netlify env (GEMINI_KEYS).
@@ -65,3 +69,11 @@ export const AI_MSG_LIMITS = {
 export const GEMINI_KEYS = []; // kept for legacy import compat
 export const GEMINI_MODEL_PRIMARY = "gemini-3.6-flash";
 export const GEMINI_MODEL_FALLBACK = "gemini-3.6-flash";
+export async function syncLiveSites() {
+  try {
+    const { data: dbSites } = await supabase.from('sites').select('*').order('id', { ascending: true });
+    if (dbSites && dbSites.length > 0) {
+      SITES.splice(0, SITES.length, ...dbSites);
+    }
+  } catch (_) {}
+}

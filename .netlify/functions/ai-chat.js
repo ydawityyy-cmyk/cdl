@@ -6,12 +6,15 @@ const https = require('https');
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://dljvplrbjogncwrpmfsj.supabase.co';
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsanZwbHJiam9nbmN3cnBtZnNqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODUyMDEzMiwiZXhwIjoyMDk0MDk2MTMyfQ.20i7g7ClEJVCvKiVFR3-mXT-9EoHVhRV6iSiioWa-O0';
 
-function httpsRequest(url, options, body) {
+function httpsRequest(url, options, body, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     const req = https.request(url, options, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => { resolve({ status: res.statusCode, headers: res.headers, body: data }); });
+    });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error('Request timeout after ' + timeoutMs + 'ms'));
     });
     req.on('error', reject);
     if (body) req.write(body);
@@ -43,7 +46,7 @@ async function getGeminiKey() {
 const ROLE_INTELLIGENCE = {
   admin: {
     title: "Chief System Administrator",
-    focus: "Full portfolio oversight, user permissions & access control, system audit logs, cross-site integrity, master credentials, and operational health.",
+    focus: "Full portfolio oversight, user permissions & access control, system audit logs, cross-site integrity, and operational health.",
     posture: "Executive Command: Provide direct administrative control, user management guidance, system security answers, and full portfolio drill-downs.",
   },
   company_owner: {
@@ -151,7 +154,6 @@ ${sites || '  No sites loaded'}
 
 ### PERSONNEL DIRECTORY (${ctx.activeUserCount || 51} users)
 ${users || '  No users loaded'}
-*Master system default password: \`canaan123\`*
 
 ### LIVE INVENTORY SNAPSHOT
 ${stockLines || '  No stock loaded'}
@@ -163,15 +165,18 @@ ${stockLines || '  No stock loaded'}
 
 ## CRITICAL RESPONSE DIRECTIVES
 1. **No Robot Openers**: Start directly with the answer.
-2. **Role-Tailored Scope**:
+2. **Strict Data Minimization & Privacy**: 
+   - NEVER output user email addresses, usernames, passwords, tokens, or credential summaries.
+   - If asked about the current user's role or scope, return ONLY: Role title, Assigned Sites, and Available Modules.
+   - NEVER include credential headers or management footnotes.
+3. **Role-Tailored Scope**:
    - If talking to **Admin/Executives**: Offer high-level metrics, system governance, and portfolio oversight.
    - If talking to **Finance**: Provide KES financial values, procurement commitments, and audit compliance.
    - If talking to **PMs**: Focus on assigned site operations, requisitions awaiting PM review, and site timelines.
    - If talking to **Engineers/Supervisors**: Provide precise structural formulas, batching calculations, and technical steps.
    - If talking to **Procurement/Transfers/Storekeepers**: Focus on logistics, LPOs, dispatch routes, FIFO, and delivery notes.
-3. **Credentials Queries**: Always provide the user's email, role, and default system password (\`canaan123\`).
 4. **Calculations**: Show practical engineering working steps (dry bulking factor 1.55, bag counts, sand/ballast ratios, water-cement ratios).
-5. **Format**: Clean markdown bullets, bold metrics, and code blocks.`;
+5. **Format**: Clean markdown bullets, bold metrics, and concise tables.`;
 }
 
 // Call Gemini with multi-model fallback and high token allowance
@@ -217,6 +222,7 @@ async function callGemini(apiKey, systemPrompt, userPrompt, history = []) {
   throw lastError || new Error('All Gemini model endpoints failed');
 }
 
+// DATA_FRESHNESS injected into every context
 async function fetchLiveContext(user) {
   try {
     const [sites, users, stock, requests, grns, transfers] = await Promise.all([
@@ -239,6 +245,7 @@ async function fetchLiveContext(user) {
       pendingGrnCount: (grns || []).filter(g => g.status === 'pending').length,
       pendingTransfers: (transfers || []).filter(t => t.status === 'pending'),
       pendingTransferCount: (transfers || []).filter(t => t.status === 'pending').length,
+      dataFetchedAt: new Date().toISOString(),
     };
   } catch (err) {
     console.warn('[ai-chat] Context fetch error:', err.message);
@@ -249,16 +256,23 @@ async function fetchLiveContext(user) {
 // Deep semantic rule engine (high-logic fallback if offline)
 function generateFallbackResponse(prompt, user, ctx) {
   const q = prompt.toLowerCase();
-  if (q.includes('password') || q.includes('login') || q.includes('credential') || q.includes('cred')) {
-    return '### 🔐 CDL System Credentials\n\n• **Default System Password**: `canaan123`\n• **Admin Account**: `admin@canaan.co.ke`\n• All newly provisioned users receive `canaan123` by default.';
+  if (q.includes('password') || q.includes('login') || q.includes('credential') || q.includes('cred') || q.includes('token') || q.includes('key')) {
+    return "I cannot provide, discuss, or speculate on passwords, tokens, API keys, or private credentials. Please contact your system administrator or use the secure password reset flow if you need account assistance.";
+  }
+  if (q.includes('role') || q.includes('site') || q.includes('module') || q.includes('who am i') || q.includes('permission')) {
+    const siteNames = (user.site_ids && user.site_ids.length > 0)
+      ? user.site_ids.map(id => (ctx.sites || []).find(s => s.id === id)?.name || ("Site " + id)).join(", ")
+      : "All CDL Sites (Portfolio-wide)";
+    const modules = ["Dashboard", "Requests", "Inventory", "Transfers", "Procurement", "GRN Ingestion", "Incidents", "Reports", "Audit Log"];
+    return "**User Operational Scope**:\n• **Role**: " + user.role + "\n• **Assigned Sites**: " + siteNames + "\n• **Authorized Modules**: " + modules.join(", ");
   }
   if (q.includes('expir') || q.includes('spoil')) {
     const today = new Date();
     const expiring = (ctx.stock || []).filter(i => i.expiry_date && (new Date(i.expiry_date) - today) / 86400000 <= 60);
-    if (!expiring.length) return 'All stock is within valid shelf-life. No materials approaching critical expiration.';
-    return '⚠️ **Expiring Stock Alert**:\n' + expiring.map(i => `• **${i.material_name}**: ${i.quantity} ${i.unit} (Expires: ${i.expiry_date})`).join('\n');
+    if (!expiring.length) return "All stock is within valid shelf-life. No materials approaching critical expiration.";
+    return "⚠️ **Expiring Stock Alert**:\n" + expiring.map(i => "• **" + i.material_name + "**: " + i.quantity + " " + (i.unit || "") + " (Expires: " + i.expiry_date + ")").join("\n");
   }
-  return `I am connected live to **${ctx.activeSiteCount || 12} CDL sites** and **${ctx.totalStockItems || 0} inventory records**. What can I assist you with?`;
+  return "I am connected live to **" + (ctx.activeSiteCount || 12) + " CDL sites** and **" + (ctx.totalStockItems || 0) + " inventory records**. What can I assist you with?";
 }
 
 exports.handler = async (event) => {
@@ -284,23 +298,60 @@ exports.handler = async (event) => {
 
   try {
     const authHeader = event.headers['authorization'] || event.headers['Authorization'];
-    let user = { role: 'admin', name: 'User', id: null };
+    let user = null;
 
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const jwt = authHeader.slice(7);
       try {
-        const userRes = await httpsRequest(`${SUPABASE_URL}/auth/v1/user`, {
-          method: 'GET',
-          headers: { apikey: SERVICE_ROLE, Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
-        });
-        if (userRes.status === 200) {
-          const authUser = JSON.parse(userRes.body);
-          const profileRows = await supabaseQuery(`users?id=eq.${authUser.id}&select=id,role,name,email,position,site_ids,is_active&limit=1`);
-          if (profileRows.length) user = { ...profileRows[0], id: authUser.id };
-          else user = { ...user, id: authUser.id };
+        // Fast direct JWT decode
+        const parts = jwt.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+          const userId = payload.sub;
+          const userEmail = payload.email;
+          if (userId) {
+            const profileRows = await supabaseQuery(`users?id=eq.${encodeURIComponent(userId)}&select=id,role,name,email,position,site_ids,is_active&limit=1`);
+            if (profileRows && profileRows.length) {
+              user = profileRows[0];
+            } else if (userEmail) {
+              const emailRows = await supabaseQuery(`users?email=eq.${encodeURIComponent(userEmail)}&select=id,role,name,email,position,site_ids,is_active&limit=1`);
+              if (emailRows && emailRows.length) user = emailRows[0];
+            }
+          }
         }
+      } catch (err) {
+        console.warn('[ai-chat] JWT parsing warning:', err.message);
+      }
+    }
+
+    if (!user) {
+      return {
+        statusCode: 401,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ error: 'Authentication required to access AI Site Intelligence.' })
+      };
+    }
+
+    // ── Backend AI Access Enforcement ──────────────────────────────────────────
+    const AI_ALLOWED_BUILTIN_ROLES = ['admin', 'company_owner', 'ceo', 'asset_manager'];
+    let userHasAIAccess = AI_ALLOWED_BUILTIN_ROLES.includes(user.role);
+
+    // Custom roles: check role_permissions table for ai:access
+    if (!userHasAIAccess && user.role) {
+      try {
+        const permRes = await supabaseQuery(`role_permissions?role_key=eq.${encodeURIComponent(user.role)}&select=permission_key`);
+        userHasAIAccess = (permRes || []).some(p => p.permission_key === 'ai:access');
       } catch (_) {}
     }
+
+    if (!userHasAIAccess) {
+      return {
+        statusCode: 403,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ error: `AI access not authorized for role '${user.role}'. Contact your administrator for access.` })
+      };
+    }
+    // ── End AI Access Enforcement ─────────────────────────────────────────────
 
     const { prompt, history } = JSON.parse(event.body || '{}');
     if (!prompt || typeof prompt !== 'string') {
@@ -308,6 +359,26 @@ exports.handler = async (event) => {
         statusCode: 400,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         body: JSON.stringify({ error: 'Prompt is required' })
+      };
+    }
+
+    // ── STRICT HARD REFUSAL GUARD: Credential Privacy ─────────────────────────
+    // Protect against extraction of raw secrets/passwords while allowing benign role queries
+    const EXTRACTION_PATTERNS = [
+      /(what|show|tell|give|reveal|dump|print|leak|get)\s+(is|me|the|all)?\s*(the)?\s*(password|passwords|passwd|secret|api[\s_-]?key|auth[\s_-]?token|credential|master[\s_-]?key)/i,
+      /(system|default|admin|root|master)\s+(password|secret|credential|token)/i,
+      /show\s+(me\s+)?(all\s+)?credentials/i
+    ];
+    const isExtractionAttempt = EXTRACTION_PATTERNS.some(p => p.test(prompt));
+
+    if (isExtractionAttempt) {
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({
+          reply: "I cannot provide, discuss, or speculate on passwords, tokens, API keys, or private credentials. Please contact your system administrator or use the secure password reset flow if you need account assistance.",
+          powered: "security-guard"
+        })
       };
     }
 

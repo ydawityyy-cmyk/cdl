@@ -128,7 +128,7 @@ export async function renderOwnerDashboard(container, user) {
 
   // Load data in parallel
   const [stockRes, reqRes, incRes, grnRes, procRes] = await Promise.all([
-    supabase.from("stock").select("site_id,quantity,unit_price").limit(500),
+    supabase.from("stock").select("site_id,material_name,quantity,unit,unit_price,last_updated").limit(1000),
     supabase.from("material_requests").select("id,urgency,site_id").eq("status", "pending").limit(100),
     supabase.from("incidents").select("id,estimated_value,type").eq("status", "pending").limit(50),
     supabase.from("grns").select("id").eq("status", "pending").limit(50),
@@ -295,7 +295,7 @@ export async function renderOwnerDashboard(container, user) {
     content.textContent = "✦ Generating executive brief…";
     const prompt = getSystemPrompt(user,{stock:stock.length,lowStock,critReqs,incidents:incidents.length,grns:grns.length});
     const brief = await callAI(
-      `Generate a concise executive brief for the Company Owner of Canaan Developers Ltd.
+      `Generate a concise real-time executive brief for the Company Owner of Canaan Developers Ltd based on today's live data (2026-08-21).
 Data: ${stock.length} stock items, ${lowStock} low stock, ${critReqs} critical requests, 
 ${incidents.length} open incidents (KES ${incVal.toLocaleString()} loss), ${grns.length} unverified GRNs.
 Format: 3 sections — STATUS, ALERTS, ACTIONS. Be specific. KES currency.`, prompt);

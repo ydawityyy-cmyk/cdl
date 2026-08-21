@@ -110,36 +110,22 @@ export async function renderFinanceDashboard(container, user) {
     } catch(e) { console.error("[Finance Chart]",e); }
   },100);
 
-  // AI Chat for Finance (7 msgs/day per spec)
-  if (!document.getElementById('ai-input')) {
+  
+  // AI Advisor for Finance is restricted
+  if (!document.getElementById('fin-ai-locked')) {
     const aiDiv = document.createElement('div');
+    aiDiv.id = 'fin-ai-locked';
     aiDiv.className = 'card';
-    aiDiv.style.cssText = 'margin-top:20px;';
+    aiDiv.style.cssText = 'margin-top:20px;text-align:center;padding:32px;';
     aiDiv.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span style="font-size:14px;font-weight:700;color:var(--gold);">✦ AI Advisor</span>
-          <span style="background:rgba(212,175,110,0.12);color:var(--gold);font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;">Live Sync</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button onclick="window._aiClearChat()" title="Start a fresh chat conversation"
-            style="background:var(--bg-700);border:1px solid var(--border);border-radius:6px;padding:3px 10px;color:var(--text-200);font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s;"
-            onmouseenter="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
-            onmouseleave="this.style.borderColor='var(--border)';this.style.color='var(--text-200)'">
-            ✨ New Chat / Clear
-          </button>
-          <span style="color:var(--text-300);font-size:11px;">7 msgs/day</span>
-        </div>
-      </div>
-      <div id="ai-chat-messages" style="height:360px;min-height:240px;max-height:550px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
-      <div style="display:flex;gap:8px;">
-        <input id="ai-input" type="text" placeholder="Ask about finance, budget, spend…"
-          style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text-primary);font-size:13px;" />
-        <button id="ai-send" class="btn btn-gold btn-sm">→</button>
+      <div style="font-size:32px;margin-bottom:10px;">🔒</div>
+      <div style="font-size:15px;font-weight:700;color:var(--text-100);margin-bottom:6px;">AI Advisor — Access Restricted</div>
+      <div style="font-size:13px;color:var(--text-muted);max-width:400px;margin:0 auto;">
+        AI Advisor is available for executive and strategic roles. Contact your administrator if you require access.
       </div>`;
     container.appendChild(aiDiv);
   }
-  if (typeof initAIChat === 'function') initAIChat(user);
+
 
   window.exportFinanceCSV = () => {
     const rows = procurement.map(p=>({

@@ -1,3 +1,16 @@
+
+const head_of_projects = {
+  label: "Head of Projects",
+  color: "#8e44ad",
+  dashboardModule: "dashboards_pm",
+  siteScope: "all",
+  canApproveTransfers: true,
+  canApproveRequests: true,
+  canResolveIncident: true,
+  canSeeAllFinancials: true,
+  showPopups: true,
+  aiMsgsPerDay: 7,
+};
 // ============================================================
 // CDL Site Management v10 — modules/roles.js
 // Role definitions, permission flags, and email log scoping.
@@ -66,7 +79,7 @@ const office_manager = {
   dashboardModule: "dashboards_roles",
   siteScope: "all",
   showPopups: false,
-  aiMsgsPerDay: 7,
+  aiMsgsPerDay: 0,
 };
 
 const asset_manager = {
@@ -78,7 +91,7 @@ const asset_manager = {
   canApproveTransfers: true,
   canResolveIncident: true,
   showPopups: true,
-  aiMsgsPerDay: 0,
+  aiMsgsPerDay: 7,
   // NOTE: NO budget access unless granted by CEO
   // Executive roles are read-only + AI advisor only — NO write access to operational data
   canCreateRequest: false,
@@ -102,7 +115,7 @@ const finance = {
   canSeeAllFinancials: true,
   canEditInventory: false,   // HARD BLOCK — finance cannot touch inventory
   showPopups: false,
-  aiMsgsPerDay: 7,
+  aiMsgsPerDay: 0,
 };
 
 const project_manager = {
@@ -111,14 +124,14 @@ const project_manager = {
   dashboardModule: "dashboards_pm",
   siteScope: "assigned",
   canApproveRequests: true,
-  canIssueStock: true,
+  canIssueStock: false,      // HARD: PM approves; Storekeeper issues & deducts inventory
   canCreateTransfer: true,
   canCreateRequest: true,
   canResolveIncident: true,
   canCreateIncident: true,
   canApprovePM: true,
   showPopups: true,
-  aiMsgsPerDay: 5,
+  aiMsgsPerDay: 0,
 };
 
 const engineer = {
@@ -129,7 +142,7 @@ const engineer = {
   canCreateRequest: true,
   canCreateIncident: true,
   showPopups: false,         // HARD: no popups for engineer
-  aiMsgsPerDay: 5,
+  aiMsgsPerDay: 0,
 };
 
 const store_manager = {
@@ -189,7 +202,7 @@ const procurement_officer = {
   canCreateTransfer: true,
   procurementScope: "am_approved",
   // Sees ONLY pm_approved requests (not raw engineer requests)
-  aiMsgsPerDay: 5,
+  aiMsgsPerDay: 0,
 };
 
 const transfer_officer = {
@@ -200,7 +213,7 @@ const transfer_officer = {
   canCreateTransfer: true,
   canPickupTransfer: true,
   canDeliverTransfer: true,
-  aiMsgsPerDay: 5,
+  aiMsgsPerDay: 0,
 };
 
 const data_holder = {
@@ -210,7 +223,7 @@ const data_holder = {
   siteScope: "all",
   canVerifyGRN: true,
   canFlagDiscrepancy: true,
-  aiMsgsPerDay: 5,
+  aiMsgsPerDay: 0,
 };
 
 const supervisor = {
@@ -221,7 +234,7 @@ const supervisor = {
   canCreateRequest: true,
   canCreateIncident: true,
   showPopups: false,
-  aiMsgsPerDay: 5,
+  aiMsgsPerDay: 0,
 };
 
 const site_overseer = {
@@ -230,7 +243,7 @@ const site_overseer = {
   dashboardModule: "dashboards_roles",
   siteScope: "all",
   canViewPMKPIs: true,
-  aiMsgsPerDay: 5,
+  aiMsgsPerDay: 0,
 };
 
 const admin = {
@@ -251,6 +264,7 @@ const admin = {
 // All 17 role definitions keyed by role identifier.
 
 export const ROLES = {
+  head_of_projects,
   company_owner,
   ceo,
   office_manager,

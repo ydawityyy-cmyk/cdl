@@ -47,21 +47,28 @@ export async function renderCEODashboard(container, user) {
       </div>
     </div>`;
 
-  const [stockRes, procRes, transRes] = await Promise.all([
+  // Matched order in Promise.all and destructuring:
+  // 1: sites, 2: stock, 3: procurement, 4: transfers
+  const [sitesRes, stockRes, procRes, transRes] = await Promise.all([
+    supabase.from("sites").select("id,name,is_active"),
     supabase.from("stock").select("site_id,quantity,unit_price").limit(500),
     supabase.from("procurement").select("*").in("status", ["pending", "pm_approved", "am_approved"]).limit(50),
     supabase.from("transfers").select("id,status").in("status", ["pending", "source_pm_approved", "dest_pm_approved"]).limit(30),
   ]);
+
+  const liveSites = sitesRes.data || [];
   const stock = stockRes.data || [];
   const procurement = procRes.data || [];
   const transfers = transRes.data || [];
 
-  const totalVal = stock.reduce((s,i)=>s+((i.quantity||0)*(i.unit_price||0)),0);
+  const activeSitesCount = liveSites.length ? liveSites.filter(s => s.is_active !== false).length : SITES.length;
+  const totalVal = stock.reduce((s,i)=>s+((Number(i.quantity)||0)*(Number(i.unit_price)||0)),0);
+
   document.getElementById("ceo-kpis").innerHTML = [
     {icon:"💰",label:"Portfolio Value",val:`KES ${(totalVal/1e6).toFixed(1)}M`,c:"var(--accent-gold)"},
     {icon:"🛒",label:"Procurement Queue",val:procurement.length,c:"var(--accent-orange)"},
     {icon:"🚚",label:"Active Transfers",val:transfers.length,c:"var(--accent-blue)"},
-    {icon:"🏗",label:"Active Sites",val:SITES.filter(s=>s.id).length,c:"var(--accent-green)"},
+    {icon:"🏗",label:"Active Sites",val:activeSitesCount,c:"var(--accent-green)"},
   ].map(k=>`<div class="card" style="border-top:2px solid ${k.c};padding:16px;text-align:center;">
     <div style="font-size:22px;margin-bottom:8px;">${k.icon}</div>
     <div style="font-size:22px;font-weight:700;color:${k.c};font-family:var(--font-display);">${k.val}</div>
@@ -70,29 +77,34 @@ export async function renderCEODashboard(container, user) {
 
   const approvalEl = document.getElementById("ceo-approvals");
   if (approvalEl) {
-    approvalEl.innerHTML = procurement.length ? procurement.slice(0,6).map(p=>`
+    approvalEl.innerHTML = procurement.length ? procurement.slice(0,6).map(p=>{
+      const supplier = p.supplier || (Array.isArray(p.items) && p.items[0]?.name) || "Purchase Order";
+      const amount = Number(p.total_amount) || 0;
+      const status = p.status || "pending";
+      return `
       <div style="padding:10px 0;border-bottom:1px solid var(--border);">
-        <div style="font-size:13px;color:var(--text-primary);">${p.supplier||"Unknown Supplier"}</div>
+        <div style="font-size:13px;color:var(--text-primary);">${supplier}</div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
-          <span style="font-size:12px;color:var(--accent-gold);">KES ${(p.total_amount||0).toLocaleString()}</span>
-          <span style="font-size:11px;background:rgba(61,142,248,0.1);color:var(--accent-blue);padding:1px 8px;border-radius:10px;">${p.status}</span>
+          <span style="font-size:12px;color:var(--accent-gold);">KES ${amount.toLocaleString()}</span>
+          <span style="font-size:11px;background:rgba(61,142,248,0.1);color:var(--accent-blue);padding:1px 8px;border-radius:10px;">${status.replace(/_/g, " ")}</span>
         </div>
-      </div>`).join("") : `<div style="color:var(--accent-green);padding:20px;text-align:center;font-size:13px;">✓ No pending approvals</div>`;
+      </div>`;
+    }).join("") : `<div style="color:var(--accent-green);padding:20px;text-align:center;font-size:13px;">✓ No pending approvals</div>`;
   }
 
   setTimeout(()=>{
     if (typeof Chart === "undefined") return;
     const cv = document.getElementById("ceo-site-chart");
     if (!cv) return;
-    // Destroy existing chart instance to prevent "Canvas is already in use" error
     if (cv._chart) {
       cv._chart.destroy();
       cv._chart = null;
     }
-    const vals = SITES.map(s=>stock.filter(i=>i.site_id===s.id).reduce((a,i)=>a+((i.quantity||0)*(i.unit_price||0)),0));
+    const sitesToChart = liveSites.length ? liveSites : SITES;
+    const vals = sitesToChart.map(s=>stock.filter(i=>i.site_id===s.id).reduce((a,i)=>a+((Number(i.quantity)||0)*(Number(i.unit_price)||0)),0));
     try {
       cv._chart=new Chart(cv,{type:"bar",data:{
-        labels:SITES.map(s=>s.name.split(" ")[0]),
+        labels:sitesToChart.map(s=>(s.name||"Site").split(" ")[0]),
         datasets:[{data:vals,backgroundColor:"rgba(61,142,248,0.5)",borderColor:"var(--accent-blue)",borderWidth:1,borderRadius:4}]
       },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
         scales:{y:{grid:{color:"rgba(255,255,255,0.04)"},ticks:{color:"#8892a0"}},x:{grid:{display:false},ticks:{color:"#8892a0",font:{size:10}}}}}});
